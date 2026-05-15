@@ -148,16 +148,7 @@ class SwitchServer:
         if t == "hello":
             await self._on_hello(msg)
         elif t == "check":
-            await self._on_check(msg)
-            self._state.add_checked_location(
-                CheckEvent(item=protocol.ItemRef(
-                    kind=msg.get("kind", "moon"),
-                    kingdom=msg.get("kingdom"),
-                    shine_id=msg.get("shine_id"),
-                    cap=msg.get("cap"),
-                    slot=msg.get("slot"),
-                ))
-            )
+            await self._dispatch_check(msg)
         elif t == "goal":
             log.info("switch reported goal completion")
             await self._on_goal()
@@ -172,9 +163,56 @@ class SwitchServer:
             await self._send(PongMsg(ts_ms=msg.get("ts_ms", int(time.time() * 1000))))
         elif t == "log":
             self._state.add_log(f"[switch:{msg.get('level', 'info')}] {msg.get('msg', '')}")
+        elif t == "state_begin":
+            self._state.begin_snapshot(save_slot=msg.get("save_slot"))
+            log.info("snapshot begin: mod_ver=%s save_slot=%s",
+                     msg.get("mod_ver"), msg.get("save_slot"))
+        elif t == "state_chunk":
+            stage = msg.get("stage_name", "")
+            if stage == "_meta":
+                self._state.add_snapshot_chunk_meta(
+                    captures=msg.get("captures"),
+                    goal_reached=msg.get("goal_reached"),
+                )
+            else:
+                self._state.add_snapshot_chunk_shines(stage, msg.get("shines") or [])
+        elif t == "state_end":
+            await self._on_state_end()
         else:
             log.warning("unknown message type from Switch: %s", t)
             await self._send(ErrMsg(code="unknown_kind", ctx=str(t)))
+
+    async def _dispatch_check(self, msg: dict) -> None:
+        """Forward a check (live or snapshot-derived) to AP and record locally.
+
+        BridgeState.add_checked_location dedupes via the full ItemRef identity,
+        so snapshot replays don't grow the list (or trigger spurious tracker
+        increments) on every reconnect.
+        """
+        await self._on_check(msg)
+        self._state.add_checked_location(
+            CheckEvent(item=protocol.ItemRef(
+                kind=msg.get("kind", "moon"),
+                kingdom=msg.get("kingdom"),
+                shine_id=msg.get("shine_id"),
+                cap=msg.get("cap"),
+                slot=msg.get("slot"),
+                stage_name=msg.get("stage_name"),
+                object_id=msg.get("object_id"),
+                shine_uid=msg.get("shine_uid"),
+                hack_name=msg.get("hack_name"),
+            ))
+        )
+
+    async def _on_state_end(self) -> None:
+        entries, goal_reached = self._state.end_snapshot()
+        log.info("snapshot end: %d entries goal=%s", len(entries), goal_reached)
+        for entry in entries:
+            synthetic = {"t": "check", **entry}
+            await self._dispatch_check(synthetic)
+        if goal_reached:
+            log.info("snapshot reports goal already reached; forwarding")
+            await self._on_goal()
 
     async def _on_hello(self, msg: dict) -> None:
         log.info("switch HELLO: mod=%s smo=%s", msg.get("mod_ver"), msg.get("smo_ver"))

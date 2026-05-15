@@ -151,6 +151,71 @@ TEST(encode_log) {
 }
 
 // --------------------------------------------------------------------------
+// State snapshot encoders (M4.5)
+// --------------------------------------------------------------------------
+
+TEST(encode_state_begin_with_save_slot) {
+    StateBegin b{.mod_ver = "0.1.0", .save_slot = 0};
+    EXPECT_EQ_S(encodeStateBegin(b),
+        R"({"t":"state_begin","mod_ver":"0.1.0","save_slot":0})" "\n");
+}
+
+TEST(encode_state_begin_omits_save_slot_when_negative) {
+    StateBegin b{.mod_ver = "0.1.0", .save_slot = -1};
+    EXPECT_EQ_S(encodeStateBegin(b),
+        R"({"t":"state_begin","mod_ver":"0.1.0"})" "\n");
+}
+
+TEST(encode_state_chunk_per_stage) {
+    StateChunk c;
+    c.stage_name = "CapWorldHomeStage";
+    c.shines.push_back({"MoonOurFirst", 100});
+    c.shines.push_back({"MoonHatTrampoline", 101});
+    EXPECT_EQ_S(encodeStateChunk(c),
+        R"({"t":"state_chunk","stage_name":"CapWorldHomeStage",)"
+        R"("shines":[{"object_id":"MoonOurFirst","shine_uid":100},)"
+        R"({"object_id":"MoonHatTrampoline","shine_uid":101}]})" "\n");
+}
+
+TEST(encode_state_chunk_meta_carries_captures_and_goal) {
+    StateChunk c;
+    c.stage_name = "_meta";
+    c.captures = {"Kuribo", "Frog"};
+    c.include_goal_reached = true;
+    c.goal_reached = false;
+    EXPECT_EQ_S(encodeStateChunk(c),
+        R"({"t":"state_chunk","stage_name":"_meta",)"
+        R"("captures":["Kuribo","Frog"],"goal_reached":false})" "\n");
+}
+
+TEST(encode_state_chunk_skips_empty_arrays) {
+    StateChunk c;
+    c.stage_name = "_meta";
+    // No captures, no goal_reached_included.
+    EXPECT_EQ_S(encodeStateChunk(c),
+        R"({"t":"state_chunk","stage_name":"_meta"})" "\n");
+}
+
+TEST(encode_state_end) {
+    EXPECT_EQ_S(encodeStateEnd(), R"({"t":"state_end"})" "\n");
+}
+
+// Regression: Encoder must emit commas between successive nested objects in
+// an array. Pre-fix, "[{...}{...}" would slip through.
+TEST(encode_state_chunk_multi_shine_has_comma_between_objects) {
+    StateChunk c;
+    c.stage_name = "X";
+    c.shines.push_back({"A", 1});
+    c.shines.push_back({"B", 2});
+    c.shines.push_back({"C", 3});
+    const std::string wire = encodeStateChunk(c);
+    // Spot-check: must contain "},{" as the separator between adjacent objects.
+    EXPECT(wire.find("},{") != std::string::npos);
+    // And the array must close properly.
+    EXPECT(wire.find("}]}") != std::string::npos);
+}
+
+// --------------------------------------------------------------------------
 // Decoder (Bridge -> Switch)
 // --------------------------------------------------------------------------
 

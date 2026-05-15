@@ -25,4 +25,23 @@ bool extractShineCoords(/* ShineActor* shine, */
                        std::string& out_kingdom,
                        std::string& out_shine_id);
 
+// M4.5 reconciliation: enumerate every shine the player has gotten in their
+// active save. Called from the worker thread (ApClient::sendSnapshot) right
+// after HELLO and on save load (transitively, via SaveLoadHook ->
+// requestRehello -> reconnect -> sendHello -> sendSnapshot).
+//
+// Implementation lands in M5/M6 alongside grantShine — both need the same
+// GameDataHolder traversal. Until then this is a stub that emits nothing,
+// which is safe: bridge applies an empty snapshot as a no-op.
+//
+// `cb` is invoked with raw SMO identifiers (ShineInfo::stageName,
+// ShineInfo::objectId, ShineInfo::shineId). Bridge resolves to canonical
+// (kingdom, shine_id) via shine_map.json downstream — same path that handles
+// live MoonGetHook checks.
+using ShineEnumerationCallback = void(*)(void* ctx,
+                                          const char* stage_name,
+                                          const char* object_id,
+                                          int shine_uid);
+void enumerateOwnedShines(ShineEnumerationCallback cb, void* ctx);
+
 }  // namespace smoap::game

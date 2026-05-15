@@ -51,9 +51,10 @@ The PC bridge owns AP-protocol complexity (websocket + deflate + TLS + reconnect
 - **M1**: bridge skeleton — **CODE COMPLETE** (19 tests pass, loopback smoke test green, web tracker JSON endpoint verified)
 - **M2**: apworld parity fork — **CODE COMPLETE** (vendored `data/`, `creator: archipelago`)
 - **M3**: Switch module skeleton — **RUNTIME VALIDATED** (2026-05-15, Ryujinx). Subsdk9 + main.npdm produced via lunakit stock template; all 8 hooks install via soft-install probe; `nn::socket` worker thread connects, sends HELLO, bridge logs `switch HELLO: mod=0.1.0 smo=1.0.0`. Inbound-item handler / replay / exponential backoff are code-complete but not yet exercised. Real-Switch deploy gated on user choice; Ryujinx loop is canonical for now.
-- **M4**: read-only state mirroring (moon-get + capture-get hooks) — fill MoonGetHook/CaptureStartHook trampoline bodies + extractShineCoords
+- **M4**: read-only state mirroring — **DONE.** All 6 game-event hooks (MoonGet, CaptureStart, ScenarioFlag, SaveLoad, Ending, Death) emit raw SMO identifiers to the bridge. Bridge resolves via `shine_map.json` / `capture_map.json`. DeathLink outbound wired (inbound kill lands in M6). `Check` is now `char[64]` buffers + `FlatHashSet<4096>` for `locations_checked` (allocator NULL-deref workaround in our subsdk9 link). Validated in Ryujinx 2026-05-15.
+- **M4.5**: state reconciliation across disconnects — **CODE COMPLETE.** Bridge accepts new `state_begin` / `state_chunk` / `state_end` snapshot from Switch on every (re)connect (transitively on save load via `requestRehello`); accumulates raw IDs by stage and dispatches each entry through the same `check` path live moon-get hooks use. `BridgeState.add_checked_location` dedupes by full ItemRef identity so replays are no-ops. Switch fixes outbound check drop bug in `pumpOnce` (peek-then-pop). 11 new bridge tests; switch-mod enumerate functions stubbed pending M5/M6 GameDataHolder traversal.
 - **M5**: web tracker — **CODE COMPLETE** (Flask + SSE, served on :8000)
-- **M6**: item application (received items → GameDataHolder writes)
+- **M6**: item application (received items → GameDataHolder writes) — also lands snapshot enumerate bodies (`enumerateOwnedShines` / `enumerateOwnedCaptures`); same GameDataHolder traversal as `grantShine`
 - **M7**: capture lock + goal detection
 - **M8**: apworld extensions + in-game ImGui + polish
 

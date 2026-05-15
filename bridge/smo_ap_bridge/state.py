@@ -44,6 +44,18 @@ class BridgeState:
         self.moons_checked_by_kingdom: dict[str, int] = {}
         self.last_messages: list[str] = []  # PrintJSON-style log (cap 200)
         self.death_count: int = 0  # M4 DeathLink: how many times Mario died
+        # Dedup keyset for checked_locations. Snapshot replays emit synthetic
+        # checks for everything in the save; without dedup the list would
+        # grow on every reconnect. Key is the full ItemRef identity (canonical
+        # OR raw fields, whichever the producer filled in).
+        self._checked_keys: set[tuple] = set()
+        # Snapshot accumulator. begin_snapshot resets it; chunks append; end
+        # returns the raw entries for downstream dispatch. Single in-flight
+        # snapshot — the TCP stream is serial, so no need for epoch keying.
+        self._pending_snapshot_active: bool = False
+        self._pending_snapshot_entries: list[dict] = []
+        self._pending_snapshot_save_slot: int | None = None
+        self.last_snapshot_save_slot: int | None = None
 
     # ---------- AP <-> internal ----------
 
@@ -67,13 +79,30 @@ class BridgeState:
                     self.moons_received_by_kingdom.get(evt.item.kingdom, 0) + 1
                 )
 
-    def add_checked_location(self, evt: CheckEvent) -> None:
+    def add_checked_location(self, evt: CheckEvent) -> bool:
+        """Append a CheckEvent. Returns True if newly added, False if duplicate.
+
+        Dedup uses the full ItemRef identity (canonical + raw fields). Snapshot
+        replay paths rely on this — they emit synthetic checks for every owned
+        shine on every reconnect, and we don't want `checked_locations` to grow
+        unboundedly.
+        """
+        key = (
+            evt.item.kind,
+            evt.item.kingdom, evt.item.shine_id, evt.item.cap, evt.item.slot,
+            evt.item.stage_name, evt.item.object_id, evt.item.shine_uid,
+            evt.item.hack_name,
+        )
         with self._lock:
+            if key in self._checked_keys:
+                return False
+            self._checked_keys.add(key)
             self.checked_locations.append(evt)
             if evt.item.kind == "moon" and evt.item.kingdom:
                 self.moons_checked_by_kingdom[evt.item.kingdom] = (
                     self.moons_checked_by_kingdom.get(evt.item.kingdom, 0) + 1
                 )
+            return True
 
     def add_log(self, text: str) -> None:
         with self._lock:
@@ -123,3 +152,66 @@ class BridgeState:
     def all_checked_locations(self) -> list[CheckEvent]:
         with self._lock:
             return list(self.checked_locations)
+
+    # ---------- Snapshot accumulator (M4.5) ----------
+
+    def begin_snapshot(self, save_slot: int | None) -> None:
+        """Open a fresh snapshot accumulator, discarding any in-flight one.
+
+        State is per-connection: the TCP stream is single-Switch, single-thread
+        on the bridge end, so begin/chunk/end always arrive in order. If the
+        Switch reconnects mid-snapshot the connection drops first and the new
+        connection starts a fresh snapshot anyway.
+        """
+        with self._lock:
+            self._pending_snapshot_active = True
+            self._pending_snapshot_entries = []
+            self._pending_snapshot_save_slot = save_slot
+
+    def add_snapshot_chunk_shines(self, stage_name: str, shines: list[dict]) -> None:
+        """Append per-stage shine entries from a StateChunkMsg."""
+        with self._lock:
+            if not self._pending_snapshot_active:
+                return
+            for s in shines:
+                if not isinstance(s, dict):
+                    continue
+                self._pending_snapshot_entries.append({
+                    "kind": "moon",
+                    "stage_name": stage_name,
+                    "object_id": s.get("object_id"),
+                    "shine_uid": s.get("shine_uid"),
+                })
+
+    def add_snapshot_chunk_meta(
+        self,
+        captures: list[str] | None,
+        goal_reached: bool | None,
+    ) -> None:
+        """Append cross-stage `_meta` chunk entries (captures + goal)."""
+        with self._lock:
+            if not self._pending_snapshot_active:
+                return
+            for hack in (captures or []):
+                if isinstance(hack, str) and hack:
+                    self._pending_snapshot_entries.append({
+                        "kind": "capture",
+                        "hack_name": hack,
+                    })
+            # goal_reached is dispatched separately by switch_server, not
+            # accumulated as an entry. Stash it on a separate flag for the
+            # caller to read on end_snapshot.
+            if goal_reached is not None:
+                self._pending_snapshot_goal = bool(goal_reached)
+
+    def end_snapshot(self) -> tuple[list[dict], bool]:
+        """Finalize: returns (entries, goal_reached_flag) and resets buffer."""
+        with self._lock:
+            entries = list(self._pending_snapshot_entries)
+            goal = bool(getattr(self, "_pending_snapshot_goal", False))
+            self.last_snapshot_save_slot = self._pending_snapshot_save_slot
+            self._pending_snapshot_active = False
+            self._pending_snapshot_entries = []
+            self._pending_snapshot_save_slot = None
+            self._pending_snapshot_goal = False
+            return entries, goal

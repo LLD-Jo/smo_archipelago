@@ -140,6 +140,47 @@ std::string encodeLog(const Log& lg) {
     return finishLine(e);
 }
 
+std::string encodeStateBegin(const StateBegin& s) {
+    Encoder e;
+    e.beginObject()
+        .key("t").value("state_begin")
+        .key("mod_ver").value(s.mod_ver);
+    if (s.save_slot >= 0) e.key("save_slot").value(s.save_slot);
+    e.endObject();
+    return finishLine(e);
+}
+
+std::string encodeStateChunk(const StateChunk& s) {
+    Encoder e;
+    e.beginObject()
+        .key("t").value("state_chunk")
+        .key("stage_name").value(s.stage_name);
+    if (!s.shines.empty()) {
+        e.key("shines").beginArray();
+        for (const auto& sh : s.shines) {
+            e.beginObject();
+            if (!sh.object_id.empty()) e.key("object_id").value(sh.object_id);
+            if (sh.shine_uid >= 0)     e.key("shine_uid").value(sh.shine_uid);
+            e.endObject();
+        }
+        e.endArray();
+    }
+    if (!s.captures.empty()) {
+        e.key("captures").beginArray();
+        for (const auto& c : s.captures) e.value(c);
+        e.endArray();
+    }
+    if (s.include_goal_reached) e.key("goal_reached").value(s.goal_reached);
+    e.endObject();
+    return finishLine(e);
+}
+
+std::string encodeStateEnd() {
+    Encoder e;
+    e.beginObject().key("t").value("state_end").endObject();
+    return finishLine(e);
+}
+
 // ---------------------------------------------------------------------------
 // Decoder (Bridge -> Switch)
 // ---------------------------------------------------------------------------

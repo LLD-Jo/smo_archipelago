@@ -49,6 +49,15 @@ private:
     bool connectOnce();
     void disconnect();
     void sendHello();
+    // M4.5 reconciliation: walks GameDataHolder via game::enumerateOwnedShines
+    // / enumerateOwnedCaptures and emits state_begin / N x state_chunk /
+    // state_end on the wire. Called from the worker thread right after
+    // sendHello on every (re)connect — and transitively on save load via
+    // SaveLoadHook -> requestRehello -> reconnect -> sendHello -> sendSnapshot.
+    // M4.5 ships with the enumerate functions as no-op stubs (M5/M6 fills
+    // them in), so the snapshot currently emits begin + _meta + end only,
+    // which the bridge processes as an empty diff (no AP traffic).
+    void sendSnapshot();
     bool readOneLine(std::string& out);
     void handleLine(const std::string& line);
 

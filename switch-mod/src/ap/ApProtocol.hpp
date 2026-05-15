@@ -88,6 +88,44 @@ struct Log {
     std::string msg;
 };
 
+// State snapshot. Sent by the Switch on every (re)connect right after HELLO,
+// and (transitively) on save load via SaveLoadHook -> requestRehello. Three
+// kinds of message in sequence: one StateBegin, N StateChunk (per-stage shines
+// + a trailing "_meta" chunk for cross-stage data), one StateEnd.
+//
+// Carries RAW SMO identifiers (stage_name, object_id, shine_uid, hack_name)
+// matching M4's Check semantics; the bridge resolves via shine_map.json /
+// capture_map.json. The bridge is the source of truth for what AP knows; the
+// snapshot lets AP learn about anything collected while disconnected.
+//
+// These structs live on the WORKER thread (ApClient). std::string is safe
+// there (Encoder uses it internally already); only the frame-thread Check
+// requires the char[64] dance.
+
+struct StateBegin {
+    std::string mod_ver;
+    int save_slot = -1;  // -1 means absent; bridge does NOT fence on this
+};
+
+struct ShineEntry {
+    std::string object_id;
+    int shine_uid = -1;
+};
+
+struct StateChunk {
+    // Per-stage chunk: stage_name = SMO stage key (e.g. "CapWorldHomeStage"),
+    //   shines = list of {object_id, shine_uid}.
+    // Cross-stage "_meta" chunk: stage_name = "_meta", captures = list of raw
+    //   hack_names, include_goal_reached/goal_reached for the goal flag.
+    std::string stage_name;
+    std::vector<ShineEntry> shines;
+    std::vector<std::string> captures;
+    bool include_goal_reached = false;
+    bool goal_reached = false;
+};
+
+struct StateEnd {};
+
 // Bridge -> Switch ----------------------------------------------------------
 
 struct HelloAck {
@@ -158,6 +196,9 @@ std::string encodeGoal();
 std::string encodeDeath(const Death&);
 std::string encodePing(const Ping&);
 std::string encodeLog(const Log&);
+std::string encodeStateBegin(const StateBegin&);
+std::string encodeStateChunk(const StateChunk&);
+std::string encodeStateEnd();
 
 // Returns true on parse success and fills the discriminated union outputs.
 struct DecodedMsg {

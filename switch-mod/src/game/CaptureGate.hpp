@@ -25,4 +25,14 @@ std::string nameForHackData(/* const PlayerHackData* data */);
 // Plays the standard "no" SE used by the game when something is denied.
 void playSE_NG();
 
+// M4.5 reconciliation: enumerate every capture (hack) the player has currently
+// unlocked AND has used at least once. Worker-thread call from
+// ApClient::sendSnapshot. Emits raw hack_names that the bridge resolves via
+// capture_map.json.
+//
+// Stub for M4.5; M5/M6 fills in via GameDataHolder. The current ApState
+// captures_unlocked bitset only tracks AP-granted captures, not save-state.
+using CaptureEnumerationCallback = void(*)(void* ctx, const char* hack_name);
+void enumerateOwnedCaptures(CaptureEnumerationCallback cb, void* ctx);
+
 }  // namespace smoap::game

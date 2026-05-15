@@ -35,7 +35,33 @@ Single persistent TCP connection. Each message is one line of UTF-8 JSON termina
 
 // Diagnostic. level ∈ {debug, info, warn, error}.
 {"t":"log","level":"info","msg":"hook installed for ShineGet at 0x..."}
+
+// M4.5 state snapshot (3-message sequence). Sent right after `hello` on every
+// (re)connect, and transitively on save load (SaveLoadHook -> requestRehello
+// -> reconnect -> sendHello -> sendSnapshot). Carries RAW SMO identifiers;
+// bridge resolves via shine_map.json / capture_map.json — same path as live
+// `check` messages.
+//
+// `save_slot` is informational; the bridge does NOT fence on it. Switching
+// SMO save files mid-session merges all snapshots into the same AP slot
+// (idempotent at the AP layer because location ids dedupe).
+//
+// `_meta` chunk carries the cross-stage state: captures the player has used
+// (raw hack_names) and goal_reached. Goal is treated as a `goal` message if
+// true.
+{"t":"state_begin","mod_ver":"0.1.0","save_slot":0}
+{"t":"state_chunk","stage_name":"CapWorldHomeStage","shines":[
+  {"object_id":"MoonOurFirst","shine_uid":100},
+  {"object_id":"MoonHatTrampoline","shine_uid":101}
+]}
+{"t":"state_chunk","stage_name":"_meta","captures":["Kuribo"],"goal_reached":false}
+{"t":"state_end"}
 ```
+
+The bridge accumulates chunks between `state_begin` and `state_end`. On end,
+each entry is dispatched through the same `check` path live moon-get hooks
+use; the AP server dedupes by location id, so re-sending the same snapshot
+is a no-op.
 
 ## Bridge → Switch
 

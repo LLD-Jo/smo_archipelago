@@ -86,6 +86,21 @@ public:
         tail_.store((t + 1) % N, std::memory_order_release);
         return true;
     }
+    // Peek at the front entry without consuming. Consumer-only (single
+    // thread w.r.t. tail_). Used by pumpOnce for peek-then-pop sends:
+    // a failing Send leaves the entry queued for the next pump cycle so
+    // outbound checks survive transient socket errors / brief disconnects.
+    bool peek(T& out) {
+        const auto t = tail_.load(std::memory_order_relaxed);
+        if (t == head_.load(std::memory_order_acquire)) return false;  // empty
+        out = buf_[t];
+        return true;
+    }
+    // Discard the front entry. Caller must have observed it via peek().
+    void popDiscard() {
+        const auto t = tail_.load(std::memory_order_relaxed);
+        tail_.store((t + 1) % N, std::memory_order_release);
+    }
 
 private:
     std::array<T, N> buf_{};

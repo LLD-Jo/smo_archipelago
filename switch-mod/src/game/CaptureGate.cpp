@@ -32,4 +32,12 @@ void playSE_NG() {
     SMOAP_LOG_INFO("playSE_NG (stub)");
 }
 
+void enumerateOwnedCaptures(CaptureEnumerationCallback cb, void* ctx) {
+    // M5/M6 will iterate the player's used-capture record from GameDataHolder
+    // and invoke cb with each raw hack_name. Stub for M4.5 — empty snapshot
+    // is harmless.
+    (void)cb;
+    (void)ctx;
+}
+
 }  // namespace smoap::game

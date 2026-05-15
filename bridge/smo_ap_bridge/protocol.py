@@ -95,6 +95,53 @@ class LogMsg:
     msg: str = ""
 
 
+# State snapshot. Sent by the Switch on every (re)connect (right after HELLO).
+# Three kinds of message in sequence: one StateBeginMsg, N StateChunkMsg
+# (per-stage shines + a trailing "_meta" chunk for cross-stage data), one
+# StateEndMsg. The bridge accumulates them and on StateEndMsg dispatches
+# each entry through the same `check` path live moon-get hooks use, so the
+# AP server learns about anything the Switch collected during a disconnect.
+#
+# Carries RAW SMO identifiers (stage_name, object_id, shine_uid, hack_name)
+# matching M4's check semantics; the bridge resolves them via shine_map.json
+# / capture_map.json. Re-sending the same snapshot is a no-op because the
+# bridge dedupes at AP-id level (`_ctx.locations_checked`).
+#
+# Triggers on the Switch side:
+#   - Right after sendHello() on every (re)connect
+#   - SaveLoadHook calls requestRehello() which closes/reopens the TCP
+#     connection, which re-runs sendHello + the snapshot
+
+@dataclass
+class StateBeginMsg:
+    t: str = "state_begin"
+    mod_ver: str = ""
+    save_slot: int | None = None  # informational; bridge does NOT fence on it
+
+
+@dataclass
+class StateChunkMsg:
+    """One stage's worth of owned shines, OR the cross-stage `_meta` chunk.
+
+    Per-stage chunk: `stage_name` is the SMO stage key (e.g. "CapWorldHomeStage"),
+    `shines` is a list of {object_id, shine_uid} dicts.
+
+    `_meta` chunk (stage_name == "_meta"): populates `captures` (raw hack_name
+    strings) and `goal_reached`. The bridge is the source of truth for kingdom
+    unlocks (received items), so we don't echo them back here.
+    """
+    t: str = "state_chunk"
+    stage_name: str = ""
+    shines: list[dict] | None = None  # [{"object_id": "...", "shine_uid": N}]
+    captures: list[str] | None = None  # raw hack_names; only on `_meta` chunk
+    goal_reached: bool | None = None   # only on `_meta` chunk
+
+
+@dataclass
+class StateEndMsg:
+    t: str = "state_end"
+
+
 # ---------------------------------------------------------------------------
 # Bridge -> Switch
 # ---------------------------------------------------------------------------
@@ -111,19 +158,57 @@ class HelloAckMsg:
 
 @dataclass
 class ItemRef:
-    """Minimum info to locate an item or check on the Switch."""
+    """Minimum info to locate an item or check on the Switch.
+
+    Carries both canonical (kingdom/shine_id/cap) AND raw M4 identifiers
+    (stage_name/object_id/shine_uid/hack_name). Raw identifiers are filled
+    in when the source was a raw-ID `check` (or a snapshot entry); they're
+    used by `BridgeState` to dedupe CheckEvents across snapshot replays
+    that don't carry canonical fields.
+
+    NOTE: raw fields are STRIPPED when this ItemRef is serialized into a
+    CheckedReplayMsg (see `to_replay_dict()`), because the C++ parser at
+    `switch-mod/src/ap/ApProtocol.cpp:parseItemRefBody` rejects unknown
+    fields. Internal use only — never reach the wire.
+    """
     kind: str = ItemKind.MOON.value
     kingdom: str | None = None
     shine_id: str | None = None
     cap: str | None = None
     slot: int | None = None
     name: str | None = None  # for OTHER kinds where we just have a label
+    # M4 raw identifiers (preserved for dedup; not sent in CheckedReplay)
+    stage_name: str | None = None
+    object_id: str | None = None
+    shine_uid: int | None = None
+    hack_name: str | None = None
+
+    def to_replay_dict(self) -> dict[str, Any]:
+        """Wire payload for inclusion in a CheckedReplayMsg.
+
+        Strips the raw M4 fields because the C++ ItemRef parser
+        (`parseItemRefBody`) rejects unknown keys.
+        """
+        return _strip_none({
+            "kind": self.kind,
+            "kingdom": self.kingdom,
+            "shine_id": self.shine_id,
+            "cap": self.cap,
+            "slot": self.slot,
+            "name": self.name,
+        })
 
 
 @dataclass
 class CheckedReplayMsg:
     t: str = "checked_replay"
     ids: list[ItemRef] = field(default_factory=list)
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "t": self.t,
+            "ids": [ref.to_replay_dict() for ref in self.ids],
+        }
 
 
 @dataclass

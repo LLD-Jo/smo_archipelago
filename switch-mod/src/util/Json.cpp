@@ -3,9 +3,21 @@
 namespace smoap::util::json {
 
 Encoder& Encoder::beginObject() { maybeComma(); out_ += '{'; needs_comma_stack_.push_back(false); return *this; }
-Encoder& Encoder::endObject()   { out_ += '}'; needs_comma_stack_.pop_back(); return *this; }
+Encoder& Encoder::endObject() {
+    out_ += '}';
+    needs_comma_stack_.pop_back();
+    // We just emitted a complete value; the outer frame needs a comma before
+    // its next entry. Without this, e.g. an array of objects emits "[{...}{...}".
+    if (!needs_comma_stack_.empty()) needs_comma_stack_.back() = true;
+    return *this;
+}
 Encoder& Encoder::beginArray()  { maybeComma(); out_ += '['; needs_comma_stack_.push_back(false); return *this; }
-Encoder& Encoder::endArray()    { out_ += ']'; needs_comma_stack_.pop_back(); return *this; }
+Encoder& Encoder::endArray() {
+    out_ += ']';
+    needs_comma_stack_.pop_back();
+    if (!needs_comma_stack_.empty()) needs_comma_stack_.back() = true;
+    return *this;
+}
 
 Encoder& Encoder::key(std::string_view k) {
     maybeComma();

@@ -32,6 +32,8 @@
 
 #include "ApProtocol.hpp"
 #include "ApState.hpp"
+#include "../game/CaptureGate.hpp"
+#include "../game/MoonApply.hpp"
 #include "../util/Log.hpp"
 
 namespace smoap::ap {
@@ -159,6 +161,7 @@ void ApClient::threadMain() {
             }
             backoff_ms = target_.retry_ms;  // reset on success
             sendHello();
+            sendSnapshot();
             ApState::instance().conn.store(ConnState::Hello);
         }
 
@@ -252,20 +255,116 @@ void ApClient::sendHello() {
     SMOAP_LOG_INFO("[conn] HELLO send returned %d", sent);
 }
 
-void ApClient::pumpOnce() {
+namespace {
+
+// Per-stage shine accumulator used by sendSnapshot's enumeration callback.
+// We bucket shines by stage_name so each kingdom emits one StateChunk message
+// (instead of one chunk per shine), keeping wire chatter low and respecting
+// the 8 KiB per-line cap.
+struct SnapshotBuilder {
+    int sock_fd = -1;
+    StateChunk current;
+    bool current_active = false;
+
+    void flushIfNeeded(const char* stage) {
+        if (current_active && current.stage_name != stage) {
+            const std::string line = encodeStateChunk(current);
+            nn::socket::Send(sock_fd, line.data(), line.size(), 0);
+            current = StateChunk{};
+            current_active = false;
+        }
+    }
+    void addShine(const char* stage, const char* obj, int uid) {
+        if (!stage || !*stage) return;
+        flushIfNeeded(stage);
+        if (!current_active) {
+            current.stage_name = stage;
+            current_active = true;
+        }
+        ShineEntry s;
+        if (obj) s.object_id = obj;
+        s.shine_uid = uid;
+        current.shines.push_back(std::move(s));
+    }
+    void finalize() {
+        if (current_active) {
+            const std::string line = encodeStateChunk(current);
+            nn::socket::Send(sock_fd, line.data(), line.size(), 0);
+            current_active = false;
+        }
+    }
+};
+
+}  // namespace
+
+void ApClient::sendSnapshot() {
     auto& st = ApState::instance();
-    Check c;
-    while (st.outbound_checks.pop(c)) {
-        const std::string line = encodeCheck(c);
+
+    // 1) state_begin
+    {
+        StateBegin b;
+        b.mod_ver = SMO_AP_MOD_VERSION_STRING;
+        // M4.5 has no save-slot accessor wired up yet; M5/M6 will populate
+        // this from GameDataHolder. -1 omits the field on the wire.
+        b.save_slot = -1;
+        const std::string line = encodeStateBegin(b);
         if (nn::socket::Send(socket_fd_, line.data(), line.size(), 0) < 0) {
-            // Re-queue would lose ordering; for a single-conn world we just
-            // drop and rely on next-frame retry. Disconnect handler will
-            // trigger the bridge's checked_replay on reconnect.
+            SMOAP_LOG_WARN("[snapshot] state_begin send failed; aborting");
             return;
         }
     }
+
+    // 2) per-stage chunks. M4.5 stub for enumerateOwnedShines emits nothing,
+    //    so the only wire output here is when M5/M6 lands the real impl.
+    SnapshotBuilder builder{};
+    builder.sock_fd = socket_fd_;
+    smoap::game::enumerateOwnedShines(
+        [](void* ctx, const char* stage, const char* obj, int uid) {
+            auto* b = static_cast<SnapshotBuilder*>(ctx);
+            b->addShine(stage, obj, uid);
+        },
+        &builder);
+    builder.finalize();
+
+    // 3) _meta chunk: cross-stage state. Always emitted so the bridge sees
+    //    the goal flag (and so we have a "snapshot is complete" canary).
+    {
+        StateChunk meta;
+        meta.stage_name = "_meta";
+        smoap::game::enumerateOwnedCaptures(
+            [](void* ctx, const char* hack) {
+                auto* m = static_cast<StateChunk*>(ctx);
+                if (hack && *hack) m->captures.emplace_back(hack);
+            },
+            &meta);
+        meta.include_goal_reached = true;
+        meta.goal_reached = st.goal_sent;
+        const std::string line = encodeStateChunk(meta);
+        nn::socket::Send(socket_fd_, line.data(), line.size(), 0);
+    }
+
+    // 4) state_end
+    {
+        const std::string line = encodeStateEnd();
+        nn::socket::Send(socket_fd_, line.data(), line.size(), 0);
+    }
+    SMOAP_LOG_INFO("[conn] snapshot sent");
+}
+
+void ApClient::pumpOnce() {
+    // Peek-then-pop: a failed Send leaves the entry queued for the next pump
+    // cycle. Combined with the snapshot on (re)connect, this means brief
+    // disconnects don't lose outbound checks (the deque covers the gap; the
+    // snapshot covers anything beyond it).
+    auto& st = ApState::instance();
+    Check c;
+    while (st.outbound_checks.peek(c)) {
+        const std::string line = encodeCheck(c);
+        if (nn::socket::Send(socket_fd_, line.data(), line.size(), 0) < 0) return;
+        st.outbound_checks.popDiscard();
+    }
     StatusEvent e;
-    while (st.outbound_status.pop(e)) {
+    while (st.outbound_status.peek(e)) {
         if (e.goal) {
             const std::string line = encodeGoal();
             if (nn::socket::Send(socket_fd_, line.data(), line.size(), 0) < 0) return;
@@ -280,6 +379,7 @@ void ApClient::pumpOnce() {
             // Clear the debounce flag so the next death can be reported.
             st.death_pending_send.store(false, std::memory_order_release);
         }
+        st.outbound_status.popDiscard();
     }
 }
 
