@@ -84,6 +84,16 @@ inline constexpr const char* kGameDataFileInitializeData =
 inline constexpr const char* kDemoPeachWeddingMakeActorAlive =
     "_ZN16DemoPeachWedding14makeActorAliveEv";
 
+// --- Mario death (DeathLink outbound) ---
+// PlayerHitPointData::kill()
+// Source: lunakit-vendor/src/game/GameData/PlayerHitPointData.h:25
+// Single chokepoint: all death paths (PlayerStateDamageLife, fall area,
+// drown, poison, abyss) converge here when HP transitions to 0. Idempotent
+// guard via ApState::death_pending_send so respawn-area double-calls don't
+// re-fire DeathLink bounces.
+inline constexpr const char* kPlayerHitPointDataKill =
+    "_ZN18PlayerHitPointData4killEv";
+
 // =============================================================================
 // Legacy / aliasing — kept so existing call sites don't break.
 // =============================================================================

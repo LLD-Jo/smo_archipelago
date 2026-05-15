@@ -1,4 +1,9 @@
 // Frame-thread <-> socket-thread marshalling.
+//
+// All Check fields are fixed char[64] buffers — no allocation on the frame
+// thread. libstdc++'s std::string allocator NULL-derefs in our subsdk9
+// context for non-SSO strings; see ApProtocol.hpp for the kCheckFieldCap
+// rationale.
 
 #include "ApFrameBridge.hpp"
 
@@ -11,27 +16,35 @@ static void enqueueCheck(const Check& c) {
     auto& st = ApState::instance();
     if (st.synthetic_grant_this_frame) return;  // suppress on AP-granted moons
     const std::uint64_t h = ApState::hashCheck(c);
-    if (!st.locations_checked.insert(h).second) return;  // already checked this session
+    if (!st.locations_checked.tryInsert(h)) return;  // already checked this session
     st.outbound_checks.push(c);
 }
 
-void reportMoonChecked(const std::string& kingdom, const std::string& shine_id) {
-    enqueueCheck(Check{
-        .kind = ItemKind::Moon,
-        .kingdom = kingdom,
-        .shine_id = shine_id,
-    });
+void reportMoonChecked(const char* stage_name, const char* object_id, int shine_uid) {
+    Check c{};
+    c.kind = ItemKind::Moon;
+    copyCheckField(c.stage_name, stage_name);
+    copyCheckField(c.object_id, object_id);
+    c.shine_uid = shine_uid;
+    enqueueCheck(c);
 }
 
-void reportCaptureChecked(const std::string& cap) {
-    enqueueCheck(Check{
-        .kind = ItemKind::Capture,
-        .cap = cap,
-    });
+void reportCaptureChecked(const char* hack_name) {
+    Check c{};
+    c.kind = ItemKind::Capture;
+    copyCheckField(c.hack_name, hack_name);
+    enqueueCheck(c);
 }
 
-void reportStatus(const std::string& /*kingdom*/, int /*scenario*/, int /*moons_collected*/) {
-    // M4: enqueue Status. For now, just leave a slot for it.
+void reportStatus(const char* stage_name, int scenario_no) {
+    // Status updates aren't deduped — bridge logs / tracker uses the latest.
+    // For now we don't enqueue these into a ring (would require a new one);
+    // M4 ships scenario tracking via the existing log-string path: emit a
+    // structured log line that the bridge picks up. M5 (web tracker) will
+    // surface this from the bridge state.
+    (void)stage_name;
+    (void)scenario_no;
+    // TODO(M5): wire to a dedicated outbound_status_ring for the tracker.
 }
 
 void reportGoal() {
@@ -39,6 +52,18 @@ void reportGoal() {
     if (st.goal_sent) return;
     st.goal_sent = true;
     StatusEvent e{.goal = true};
+    st.outbound_status.push(e);
+}
+
+void reportDeath() {
+    auto& st = ApState::instance();
+    // Debounce: if a death is already queued and unsent, skip.
+    bool expected = false;
+    if (!st.death_pending_send.compare_exchange_strong(expected, true)) return;
+    // ts_ms is filled by the socket worker right before it ships (gives a more
+    // accurate wall-clock timestamp than reading on the frame thread, which
+    // would need a syscall here). 0 means "stamp at send time".
+    StatusEvent e{.goal = false, .death = true, .ts_ms = 0};
     st.outbound_status.push(e);
 }
 

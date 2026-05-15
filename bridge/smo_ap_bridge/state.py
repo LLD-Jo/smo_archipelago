@@ -43,6 +43,7 @@ class BridgeState:
         self.moons_received_by_kingdom: dict[str, int] = {}
         self.moons_checked_by_kingdom: dict[str, int] = {}
         self.last_messages: list[str] = []  # PrintJSON-style log (cap 200)
+        self.death_count: int = 0  # M4 DeathLink: how many times Mario died
 
     # ---------- AP <-> internal ----------
 
@@ -80,6 +81,10 @@ class BridgeState:
             if len(self.last_messages) > 200:
                 self.last_messages = self.last_messages[-200:]
 
+    def bump_death_count(self) -> None:
+        with self._lock:
+            self.death_count += 1
+
     # ---------- Snapshot for web tracker / replay ----------
 
     def snapshot(self) -> dict:
@@ -91,6 +96,7 @@ class BridgeState:
                 "slot": self.slot,
                 "received_count": len(self.received_items),
                 "checked_count": len(self.checked_locations),
+                "death_count": self.death_count,
                 "captures_unlocked": sorted(self.captures_unlocked),
                 "kingdoms_unlocked": sorted(self.kingdoms_unlocked),
                 "moons_received_by_kingdom": dict(self.moons_received_by_kingdom),

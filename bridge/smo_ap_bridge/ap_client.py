@@ -26,7 +26,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from .datapackage import DataPackage
-from .protocol import ItemMsg
+from .maps import CaptureMap, ShineMap
+from .protocol import ItemMsg, KillMsg
 from .state import BridgeState, ItemEvent
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -115,9 +116,13 @@ class SmoApBridgeContext:
         switch_send_item: callable,
         switch_send_print: callable,
         switch_send_ap_state: callable,
+        switch_send_kill: callable,
         state: BridgeState,
         datapackage: DataPackage,
+        shine_map: ShineMap | None = None,
+        capture_map: CaptureMap | None = None,
         archipelago_path: str | None = None,
+        deathlink_enabled: bool = False,
     ):
         self.server_addr = server_addr
         self.slot = slot
@@ -126,15 +131,25 @@ class SmoApBridgeContext:
         self._send_item = switch_send_item
         self._send_print = switch_send_print
         self._send_ap_state = switch_send_ap_state
+        self._send_kill = switch_send_kill
         self._state = state
         self._dp = datapackage
+        self._shine_map = shine_map or ShineMap()
+        self._capture_map = capture_map or CaptureMap()
         self._ap_path_hint = archipelago_path
+        self._deathlink_enabled = deathlink_enabled
         self._ctx = None  # CommonContext instance, built in start()
         self._server_loop_task: asyncio.Task | None = None
 
     async def start(self) -> None:
         CommonContext, server_loop, ClientStatus = _import_common_context(self._ap_path_hint)
         bridge = self  # capture for closures
+
+        # Tag set for the AP slot. We add "DeathLink" when enabled so the AP
+        # server routes DeathLink Bounce packets to us.
+        tags: set[str] = {"AP"}
+        if bridge._deathlink_enabled:
+            tags.add("DeathLink")
 
         class _SmoCtx(CommonContext):
             game = SmoApBridgeContext.GAME_NAME
@@ -143,6 +158,7 @@ class SmoApBridgeContext:
             def __init__(self):
                 super().__init__(bridge.server_addr, bridge.password)
                 self.auth = bridge.slot
+                self.tags = set(tags)
 
             async def server_auth(self, password_requested: bool = False):
                 if password_requested and not self.password:
@@ -179,11 +195,41 @@ class SmoApBridgeContext:
 
     # ---- inbound from Switch -> AP ----
 
-    async def report_check(self, kind: str, kingdom: str | None, shine_id: str | None,
-                           cap: str | None, slot: int | None) -> None:
+    async def report_check(
+        self,
+        kind: str,
+        kingdom: str | None = None,
+        shine_id: str | None = None,
+        cap: str | None = None,
+        slot: int | None = None,
+        stage_name: str | None = None,
+        object_id: str | None = None,
+        shine_uid: int | None = None,
+        hack_name: str | None = None,
+    ) -> None:
         if self._ctx is None:
             log.warning("report_check before AP context started; dropping")
             return
+
+        # Resolve raw IDs from the Switch into (kingdom, shine_id) / cap. Raw
+        # fields take precedence over legacy.
+        if kind == "moon" and (stage_name or object_id):
+            res = self._shine_map.resolve(stage_name, object_id, shine_uid)
+            if res is None:
+                log.warning(
+                    "no shine_map entry for stage=%r object=%r uid=%r — "
+                    "add an entry to bridge/smo_ap_bridge/data/shine_map.json",
+                    stage_name, object_id, shine_uid,
+                )
+                self._state.add_log(
+                    f"[unknown moon] stage={stage_name} object={object_id} uid={shine_uid}"
+                )
+                return
+            kingdom = res.kingdom
+            shine_id = res.shine_id
+        elif kind == "capture" and hack_name:
+            cap = self._capture_map.resolve(hack_name) or hack_name
+
         loc_name = self._reconstruct_location_name(kind, kingdom, shine_id, cap, slot)
         loc_id = self._dp.location_name_to_id.get(loc_name)
         if loc_id is None:
@@ -199,6 +245,28 @@ class SmoApBridgeContext:
             return
         from NetUtils import ClientStatus  # type: ignore[import-not-found]
         await self._ctx.send_msgs([{"cmd": "StatusUpdate", "status": ClientStatus.CLIENT_GOAL}])
+
+    async def report_death(self, ts_ms: int = 0) -> None:
+        """Mario died on the Switch. If DeathLink is enabled, send a Bounce
+        so other DeathLink-tagged slots take damage too. State tally bumps
+        regardless of whether we forward to AP."""
+        self._state.bump_death_count()
+        if not self._deathlink_enabled:
+            return
+        if self._ctx is None:
+            log.warning("report_death before AP context started; dropping")
+            return
+        import time
+        wall_time = (ts_ms / 1000.0) if ts_ms else time.time()
+        await self._ctx.send_msgs([{
+            "cmd": "Bounce",
+            "tags": ["DeathLink"],
+            "data": {
+                "time": wall_time,
+                "source": self._ctx.auth or self.slot,
+                "cause": "Mario died.",
+            },
+        }])
 
     # ---- internal: AP -> Switch ----
 
@@ -237,6 +305,21 @@ class SmoApBridgeContext:
             data = args.get("data", {}).get("games", {})
             for game_name, package in data.items():
                 self._dp.update_from_ap(game_name, package)
+        elif cmd == "Bounce":
+            # DeathLink (and possibly other bounce-tagged) traffic. Forward to
+            # the Switch if it's a DeathLink we didn't originate ourselves.
+            tags = args.get("tags") or []
+            if "DeathLink" in tags and self._deathlink_enabled:
+                data = args.get("data") or {}
+                source = str(data.get("source") or "")
+                cause = str(data.get("cause") or "")
+                own_slot = self._ctx.auth if self._ctx else self.slot
+                if source and source == own_slot:
+                    return  # don't echo our own death back to ourselves
+                self._state.add_log(
+                    f"[deathlink in] source={source or '?'} cause={cause or '?'}"
+                )
+                await self._send_kill(KillMsg(source=source, cause=cause))
 
     @staticmethod
     def _sender_name(ctx: Any, player_idx: int | None) -> str:

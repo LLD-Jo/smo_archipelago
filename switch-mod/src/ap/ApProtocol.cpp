@@ -82,10 +82,14 @@ std::string encodeCheck(const Check& c) {
     e.beginObject()
         .key("t").value("check")
         .key("kind").value(toWire(c.kind));
-    if (!c.kingdom.empty())  e.key("kingdom").value(c.kingdom);
-    if (!c.shine_id.empty()) e.key("shine_id").value(c.shine_id);
-    if (!c.cap.empty())      e.key("cap").value(c.cap);
-    if (c.slot >= 0)         e.key("slot").value(c.slot);
+    if (c.kingdom[0])    e.key("kingdom").value(c.kingdom);
+    if (c.shine_id[0])   e.key("shine_id").value(c.shine_id);
+    if (c.cap[0])        e.key("cap").value(c.cap);
+    if (c.slot >= 0)     e.key("slot").value(c.slot);
+    if (c.stage_name[0]) e.key("stage_name").value(c.stage_name);
+    if (c.object_id[0])  e.key("object_id").value(c.object_id);
+    if (c.shine_uid >= 0) e.key("shine_uid").value(c.shine_uid);
+    if (c.hack_name[0])  e.key("hack_name").value(c.hack_name);
     e.endObject();
     return finishLine(e);
 }
@@ -97,6 +101,7 @@ std::string encodeStatus(const Status& s) {
     if (!s.kingdom.empty())     e.key("kingdom").value(s.kingdom);
     if (s.scenario >= 0)        e.key("scenario").value(s.scenario);
     if (s.moons_collected >= 0) e.key("moons_collected").value(s.moons_collected);
+    if (!s.stage_name.empty())  e.key("stage_name").value(s.stage_name);
     e.endObject();
     return finishLine(e);
 }
@@ -104,6 +109,15 @@ std::string encodeStatus(const Status& s) {
 std::string encodeGoal() {
     Encoder e;
     e.beginObject().key("t").value("goal").endObject();
+    return finishLine(e);
+}
+
+std::string encodeDeath(const Death& d) {
+    Encoder e;
+    e.beginObject()
+        .key("t").value("death")
+        .key("ts_ms").value(d.ts_ms)
+     .endObject();
     return finishLine(e);
 }
 
@@ -234,6 +248,16 @@ bool parseErr(Reader& r, Err& out) {
     return true;
 }
 
+bool parseKill(Reader& r, Kill& out) {
+    std::string_view key;
+    while (r.nextField(key)) {
+        if      (key == "source") { if (!readIntoString(r, out.source)) return false; }
+        else if (key == "cause")  { if (!readIntoString(r, out.cause)) return false; }
+        else                      { return false; }
+    }
+    return true;
+}
+
 }  // namespace
 
 bool decode(const char* data, std::size_t len, DecodedMsg& out) {
@@ -256,6 +280,7 @@ bool decode(const char* data, std::size_t len, DecodedMsg& out) {
     else if (out.t == "ap_state")       ok = parseApStateMsg(r, out.ap_state);
     else if (out.t == "pong")           ok = parsePong(r, out.pong);
     else if (out.t == "err")            ok = parseErr(r, out.err);
+    else if (out.t == "kill")           ok = parseKill(r, out.kill);
     else {
         // Unknown type: leave out.t set so handleLine can warn. Don't bother
         // draining the rest of the object — caller treats unknown as ignored.

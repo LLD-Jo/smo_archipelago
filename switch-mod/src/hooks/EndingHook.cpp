@@ -17,7 +17,8 @@ namespace {
 HOOK_DEFINE_TRAMPOLINE(EndingHook) {
     static void Callback(DemoPeachWedding* self) {
         Orig(self);
-        // M7 fills in: smoap::ap::reportGoal();
+        SMOAP_LOG_INFO("EndingHook: wedding demo activated — reporting goal");
+        smoap::ap::reportGoal();   // idempotent via ApState::goal_sent
     }
 };
 }  // namespace

@@ -36,6 +36,7 @@ void installCaptureStartHook();
 void installScenarioFlagHook();
 void installSaveLoadHook();
 void installEndingHook();
+void installDeathHook();
 }  // namespace smoap::hooks
 
 namespace {
@@ -113,12 +114,13 @@ extern "C" void exl_main(void* /*x0*/, void* /*x1*/) {
     SMOAP_LOG_INFO("installing DrawMainHook -> %s", smoap::sym::kHakoniwaSequenceDrawMain);
     smoap::hooks::softInstallAtSymbol<DrawMainHook>(smoap::sym::kHakoniwaSequenceDrawMain);
 
-    SMOAP_LOG_INFO("installing 5 game-event hooks");
+    SMOAP_LOG_INFO("installing 6 game-event hooks");
     smoap::hooks::installMoonGetHook();
     smoap::hooks::installCaptureStartHook();
     smoap::hooks::installScenarioFlagHook();
     smoap::hooks::installSaveLoadHook();
     smoap::hooks::installEndingHook();
+    smoap::hooks::installDeathHook();
 
     SMOAP_LOG_INFO("=== exl_main END (waiting for GameSystem::init to fire) ===");
 }

@@ -16,13 +16,13 @@ ApState& ApState::instance() {
 void ApState::applyOnFrame() {
     Item item;
     while (inbound.pop(item)) {
-        const std::uint64_t h = hashCheck(Check{
-            .kind = item.kind,
-            .kingdom = item.kingdom,
-            .shine_id = item.shine_id,
-            .cap = item.cap,
-            .slot = item.slot,
-        });
+        Check synth{};
+        synth.kind = item.kind;
+        copyCheckField(synth.kingdom, item.kingdom.c_str());
+        copyCheckField(synth.shine_id, item.shine_id.c_str());
+        copyCheckField(synth.cap, item.cap.c_str());
+        synth.slot = item.slot;
+        const std::uint64_t h = hashCheck(synth);
 
         switch (item.kind) {
             case ItemKind::Moon:
@@ -30,7 +30,7 @@ void ApState::applyOnFrame() {
                     synthetic_grant_this_frame = true;
                     smoap::game::grantShine(item.kingdom, item.shine_id);
                     synthetic_grant_this_frame = false;
-                    locations_checked.insert(h);  // suppress matching outbound check
+                    locations_checked.tryInsert(h);  // suppress matching outbound check
                 }
                 break;
             case ItemKind::Capture:
@@ -57,9 +57,9 @@ void ApState::applyOnFrame() {
 std::uint64_t ApState::hashCheck(const Check& c) {
     // FNV-1a over a canonical fixed-order serialization. Cheap, no allocations.
     std::uint64_t h = 0xcbf29ce484222325ULL;
-    auto mix = [&](const std::string& s) {
-        for (char ch : s) {
-            h ^= static_cast<std::uint8_t>(ch);
+    auto mix = [&](const char* s) {
+        for (; *s; ++s) {
+            h ^= static_cast<std::uint8_t>(*s);
             h *= 0x100000001b3ULL;
         }
         h ^= '\x1f';
@@ -72,6 +72,12 @@ std::uint64_t ApState::hashCheck(const Check& c) {
     mix(c.cap);
     h ^= static_cast<std::uint64_t>(c.slot + 1);  // -1 -> 0
     h *= 0x100000001b3ULL;
+    // M4: fold the new raw fields so {stage_name, object_id} hashes uniquely.
+    mix(c.stage_name);
+    mix(c.object_id);
+    h ^= static_cast<std::uint64_t>(c.shine_uid + 1);  // -1 -> 0
+    h *= 0x100000001b3ULL;
+    mix(c.hack_name);
     return h;
 }
 

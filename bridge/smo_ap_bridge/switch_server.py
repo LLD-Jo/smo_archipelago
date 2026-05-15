@@ -19,6 +19,7 @@ from .protocol import (
     ErrMsg,
     HelloAckMsg,
     ItemMsg,
+    KillMsg,
     PongMsg,
 )
 from .state import BridgeState, CheckEvent, ItemEvent
@@ -28,6 +29,7 @@ log = logging.getLogger(__name__)
 
 CheckHandler = Callable[[dict], Awaitable[None]]
 GoalHandler = Callable[[], Awaitable[None]]
+DeathHandler = Callable[[int], Awaitable[None]]
 
 
 class SwitchServer:
@@ -38,12 +40,14 @@ class SwitchServer:
         state: BridgeState,
         on_check: CheckHandler,
         on_goal: GoalHandler,
+        on_death: DeathHandler | None = None,
     ):
         self._host = host
         self._port = port
         self._state = state
         self._on_check = on_check
         self._on_goal = on_goal
+        self._on_death = on_death
         self._writer: asyncio.StreamWriter | None = None
         self._writer_lock = asyncio.Lock()
         self._server: asyncio.AbstractServer | None = None
@@ -75,6 +79,9 @@ class SwitchServer:
 
     async def send_ap_state(self, conn: str) -> None:
         await self._send(ApStateMsg(conn=conn))
+
+    async def send_kill(self, kill: KillMsg) -> None:
+        await self._send(kill)
 
     async def _send(self, msg: Any) -> None:
         async with self._writer_lock:
@@ -154,6 +161,11 @@ class SwitchServer:
         elif t == "goal":
             log.info("switch reported goal completion")
             await self._on_goal()
+        elif t == "death":
+            ts_ms = int(msg.get("ts_ms") or 0)
+            log.info("switch reported death ts_ms=%d", ts_ms)
+            if self._on_death is not None:
+                await self._on_death(ts_ms)
         elif t == "status":
             log.debug("switch status: %s", msg)
         elif t == "ping":

@@ -19,8 +19,19 @@ namespace {
 HOOK_DEFINE_TRAMPOLINE(SaveLoadHook) {
     static void Callback(GameDataFile* self) {
         Orig(self);
-        // M4 fills in: clear ApState::locations_checked, reset goal_sent,
-        // force ApClient reconnect so HELLO -> checked_replay refresh fires.
+        SMOAP_LOG_INFO("SaveLoadHook: clearing session state + requesting re-HELLO");
+        auto& st = smoap::ap::ApState::instance();
+        // Reset frame-thread-only dedupe state. These are touched only from
+        // the frame thread so no lock is needed.
+        st.locations_checked.reset();
+        st.captures_unlocked.reset();
+        st.received_kingdom_mask = 0;
+        st.goal_sent = false;
+        st.death_pending_send.store(false, std::memory_order_release);
+        // Tell the socket worker to close-and-reopen so the bridge's HELLO
+        // replay re-syncs both sides. The actual socket close happens on the
+        // worker thread; we just set the atomic here.
+        smoap::ap::ApClient::instance().requestRehello();
     }
 };
 }  // namespace

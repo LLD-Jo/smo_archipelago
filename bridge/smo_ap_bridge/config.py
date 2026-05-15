@@ -32,6 +32,15 @@ class BridgeOptions:
     # CommonClient. Resolution order: this field -> SMOAP_AP_PATH env var ->
     # default `<repo>/vendor/Archipelago` (typically a git submodule).
     archipelago_path: str = ""
+    # Paths to the raw-ID resolution tables. Default to the data/ siblings.
+    shine_map_path: str = ""
+    capture_map_path: str = ""
+
+
+@dataclass
+class DeathLinkOptions:
+    """DeathLink (one player dies, everyone dies). Off by default."""
+    enabled: bool = False
 
 
 @dataclass
@@ -39,6 +48,7 @@ class Config:
     ap: ApConfig = field(default_factory=ApConfig)
     switch: SwitchConfig = field(default_factory=SwitchConfig)
     bridge: BridgeOptions = field(default_factory=BridgeOptions)
+    deathlink: DeathLinkOptions = field(default_factory=DeathLinkOptions)
 
     @classmethod
     def load(cls, path: Path | str | None) -> "Config":
@@ -52,6 +62,8 @@ class Config:
                 cfg.switch = SwitchConfig(**{**cfg.switch.__dict__, **raw["switch"]})
             if "bridge" in raw:
                 cfg.bridge = BridgeOptions(**{**cfg.bridge.__dict__, **raw["bridge"]})
+            if "deathlink" in raw:
+                cfg.deathlink = DeathLinkOptions(**{**cfg.deathlink.__dict__, **raw["deathlink"]})
 
         env_password = os.environ.get("SMOAP_PASSWORD")
         if env_password:

@@ -33,21 +33,51 @@ struct Hello {
     std::string cap_table_hash;
 };
 
+// Fixed-size char buffer used for Check string fields. libstdc++'s
+// std::string allocator path NULL-derefs in our subsdk9 context for any
+// string that exceeds SSO (~15 bytes), same root cause as the std::set
+// crash. Keeping checks allocation-free here means the frame thread can
+// produce them without touching the broken allocator. 64 bytes covers every
+// stage name, moon objectId, capture, and kingdom string SMO emits.
+inline constexpr std::size_t kCheckFieldCap = 64;
+
+// Copy a C-string into a fixed buffer, null-terminating. Null src -> empty.
+inline void copyCheckField(char (&dst)[kCheckFieldCap], const char* src) {
+    if (!src) { dst[0] = '\0'; return; }
+    std::size_t i = 0;
+    while (i + 1 < kCheckFieldCap && src[i] != '\0') {
+        dst[i] = src[i];
+        ++i;
+    }
+    dst[i] = '\0';
+}
+
 struct Check {
     ItemKind kind = ItemKind::Moon;
-    std::string kingdom;
-    std::string shine_id;
-    std::string cap;
+    // legacy resolved fields (still used by inbound items / shop / kingdom)
+    char kingdom[kCheckFieldCap] = {};
+    char shine_id[kCheckFieldCap] = {};
+    char cap[kCheckFieldCap] = {};
     int slot = -1;  // -1 means absent
+    // M4 raw identifiers — bridge resolves these via shine_map.json / capture_map.json
+    char stage_name[kCheckFieldCap] = {};  // moons: ShineInfo::stageName
+    char object_id[kCheckFieldCap] = {};   // moons: ShineInfo::objectId
+    int shine_uid = -1;                    // moons: ShineInfo::shineId
+    char hack_name[kCheckFieldCap] = {};   // captures: PlayerHackKeeper::getCurrentHackName
 };
 
 struct Status {
     std::string kingdom;
     int scenario = -1;
     int moons_collected = -1;
+    std::string stage_name;  // M4: raw stage at the time of the scenario flip
 };
 
 struct Goal {};
+
+struct Death {
+    std::int64_t ts_ms = 0;
+};
 
 struct Ping {
     std::int64_t ts_ms = 0;
@@ -111,6 +141,13 @@ struct Err {
     std::string ctx;
 };
 
+struct Kill {
+    // DeathLink forwarded from another slot. M4 logs this; killing Mario
+    // belongs to M6 where we also have the player-state-write machinery.
+    std::string source;
+    std::string cause;
+};
+
 // (de)serialization --------------------------------------------------------
 // Implementations in ApProtocol.cpp use util/Json.hpp (no STL exceptions).
 
@@ -118,6 +155,7 @@ std::string encodeHello(const Hello&);
 std::string encodeCheck(const Check&);
 std::string encodeStatus(const Status&);
 std::string encodeGoal();
+std::string encodeDeath(const Death&);
 std::string encodePing(const Ping&);
 std::string encodeLog(const Log&);
 
@@ -131,6 +169,7 @@ struct DecodedMsg {
     ApStateMsg ap_state{};
     Pong pong{};
     Err err{};
+    Kill kill{};
 };
 bool decode(const char* data, std::size_t len, DecodedMsg& out);
 

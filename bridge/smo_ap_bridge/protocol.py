@@ -41,13 +41,23 @@ class HelloMsg:
 
 @dataclass
 class CheckMsg:
-    """A location was just checked in-game."""
+    """A location was just checked in-game.
+
+    Either the legacy resolved fields (kingdom + shine_id / cap) OR the M4 raw
+    SMO identifiers (stage_name + object_id / hack_name) may be set. The
+    bridge prefers raw fields and resolves them via shine_map / capture_map.
+    """
     t: str = "check"
     kind: str = ItemKind.MOON.value
     kingdom: str | None = None
     shine_id: str | None = None
     cap: str | None = None
     slot: int | None = None  # for shop slots
+    # M4 raw identifiers (Switch sends, bridge resolves)
+    stage_name: str | None = None   # moons: ShineInfo::stageName
+    object_id: str | None = None    # moons: ShineInfo::objectId
+    shine_uid: int | None = None    # moons: ShineInfo::shineId
+    hack_name: str | None = None    # captures: PlayerHackKeeper::getCurrentHackName
 
 
 @dataclass
@@ -56,11 +66,20 @@ class StatusMsg:
     kingdom: str | None = None
     scenario: int | None = None
     moons_collected: int | None = None
+    stage_name: str | None = None  # M4: raw stage at the flag flip
 
 
 @dataclass
 class GoalMsg:
     t: str = "goal"
+
+
+@dataclass
+class DeathMsg:
+    """Mario died on the Switch. Bridge (when DeathLink is enabled) converts
+    this into an AP Bounce so other DeathLink-tagged slots take damage too."""
+    t: str = "death"
+    ts_ms: int = 0
 
 
 @dataclass
@@ -148,6 +167,16 @@ class ErrMsg:
     t: str = "err"
     code: str = ""
     ctx: str = ""
+
+
+@dataclass
+class KillMsg:
+    """DeathLink bounce forwarded by the bridge: another slot died, so the
+    Switch should kill Mario. M4 only logs this on the Switch side; actual
+    killing lands in M6 with the player-state-write machinery."""
+    t: str = "kill"
+    source: str = ""
+    cause: str = ""
 
 
 # ---------------------------------------------------------------------------

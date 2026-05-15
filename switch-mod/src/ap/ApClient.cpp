@@ -122,6 +122,13 @@ void ApClient::stop() {
     // We don't join the thread — the module lives for the process lifetime.
 }
 
+void ApClient::requestRehello() {
+    // Set the atomic; the worker reads it on the next loop iteration and
+    // closes-and-reopens. We do NOT call disconnect() here because we're on
+    // the frame thread and socket close should be owned by the worker.
+    rehello_requested_.store(true, std::memory_order_release);
+}
+
 void ApClient::threadMain() {
     SMOAP_LOG_INFO("[worker] thread started, target=%s:%u",
                    target_.host.c_str(), target_.port);
@@ -135,6 +142,13 @@ void ApClient::threadMain() {
     std::uint32_t backoff_ms = target_.retry_ms;
 
     while (running_) {
+        // Drain any frame-thread re-HELLO request before doing anything else.
+        bool expected = true;
+        if (rehello_requested_.compare_exchange_strong(expected, false)) {
+            SMOAP_LOG_INFO("re-HELLO requested; cycling connection");
+            disconnect();
+        }
+
         if (socket_fd_ < 0) {
             ApState::instance().conn.store(ConnState::Connecting);
             if (!connectOnce()) {
@@ -256,6 +270,16 @@ void ApClient::pumpOnce() {
             const std::string line = encodeGoal();
             if (nn::socket::Send(socket_fd_, line.data(), line.size(), 0) < 0) return;
         }
+        if (e.death) {
+            // The Switch doesn't have a useful wall-clock; the bridge stamps
+            // time when it converts the death to an AP Bounce. Send ts_ms=0
+            // and let the bridge fill it in.
+            Death d{.ts_ms = e.ts_ms};
+            const std::string line = encodeDeath(d);
+            if (nn::socket::Send(socket_fd_, line.data(), line.size(), 0) < 0) return;
+            // Clear the debounce flag so the next death can be reported.
+            st.death_pending_send.store(false, std::memory_order_release);
+        }
     }
 }
 
@@ -297,10 +321,13 @@ void ApClient::handleLine(const std::string& line) {
                        m.hello_ack.slot.c_str());
     } else if (m.t == "checked_replay") {
         for (const auto& ref : m.checked_replay.ids) {
-            ApState::instance().locations_checked.insert(ApState::hashCheck(Check{
-                .kind = ref.kind, .kingdom = ref.kingdom, .shine_id = ref.shine_id,
-                .cap = ref.cap, .slot = ref.slot,
-            }));
+            Check synth{};
+            synth.kind = ref.kind;
+            copyCheckField(synth.kingdom, ref.kingdom.c_str());
+            copyCheckField(synth.shine_id, ref.shine_id.c_str());
+            copyCheckField(synth.cap, ref.cap.c_str());
+            synth.slot = ref.slot;
+            ApState::instance().locations_checked.tryInsert(ApState::hashCheck(synth));
         }
         SMOAP_LOG_INFO("checked_replay: %u entries",
                        static_cast<unsigned>(m.checked_replay.ids.size()));
@@ -315,6 +342,12 @@ void ApClient::handleLine(const std::string& line) {
     } else if (m.t == "err") {
         SMOAP_LOG_WARN("bridge err code=%s ctx=%s",
                        m.err.code.c_str(), m.err.ctx.c_str());
+    } else if (m.t == "kill") {
+        // M4: log only. Actual Mario-kill on inbound DeathLink lands in M6
+        // alongside the moon-grant / state-write machinery (we need an
+        // accessor for PlayerActorHakoniwa* first).
+        SMOAP_LOG_INFO("kill (DeathLink in) source=%s cause=%s",
+                       m.kill.source.c_str(), m.kill.cause.c_str());
     } else {
         SMOAP_LOG_WARN("unknown message t=%s", m.t.c_str());
     }

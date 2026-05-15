@@ -68,6 +68,28 @@ async def test_hello_handshake_and_replay():
         assert checks_received[0]["kingdom"] == "Sand"
         assert state.moons_checked_by_kingdom.get("Sand") == 1
 
+        # Send a raw-ID moon check (M4 wire-format additions).
+        writer.write(protocol.encode(protocol.CheckMsg(
+            kind=ItemKind.MOON.value,
+            stage_name="CapWorldHomeStage",
+            object_id="MoonOurFirst",
+            shine_uid=12,
+        )))
+        await writer.drain()
+        await asyncio.sleep(0.1)
+        assert len(checks_received) == 2
+        assert checks_received[1]["stage_name"] == "CapWorldHomeStage"
+        assert checks_received[1]["object_id"] == "MoonOurFirst"
+        assert checks_received[1]["shine_uid"] == 12
+
+        # Send a capture-by-hack_name check.
+        writer.write(protocol.encode(protocol.CheckMsg(
+            kind=ItemKind.CAPTURE.value, hack_name="Goomba"
+        )))
+        await writer.drain()
+        await asyncio.sleep(0.1)
+        assert checks_received[2]["hack_name"] == "Goomba"
+
         # Send goal; verify on_goal fires.
         writer.write(protocol.encode(protocol.GoalMsg()))
         await writer.drain()
@@ -79,6 +101,41 @@ async def test_hello_handshake_and_replay():
         await writer.drain()
         pong = (await _drain_messages(reader, n=1, timeout=1.0))[0]
         assert pong == {"t": "pong", "ts_ms": 99}
+    finally:
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
+        await sw.stop()
+
+
+@pytest.mark.asyncio
+async def test_death_message_dispatches_to_handler():
+    state = BridgeState()
+
+    deaths_received: list[int] = []
+
+    async def on_check(_): ...
+    async def on_goal(): ...
+    async def on_death(ts_ms: int) -> None:
+        deaths_received.append(ts_ms)
+
+    sw = SwitchServer("127.0.0.1", 0, state, on_check, on_goal, on_death=on_death)
+    server = await asyncio.start_server(sw._handle_client, "127.0.0.1", 0)
+    sw._server = server
+    port = server.sockets[0].getsockname()[1]
+
+    reader, writer = await asyncio.open_connection("127.0.0.1", port)
+    try:
+        writer.write(protocol.encode(HelloMsg()))
+        await writer.drain()
+        await _drain_messages(reader, n=3, timeout=2.0)
+
+        writer.write(protocol.encode(protocol.DeathMsg(ts_ms=42_000)))
+        await writer.drain()
+        await asyncio.sleep(0.1)
+        assert deaths_received == [42_000]
     finally:
         writer.close()
         try:

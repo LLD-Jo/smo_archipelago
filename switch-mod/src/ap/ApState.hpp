@@ -11,11 +11,55 @@
 #include <atomic>
 #include <bitset>
 #include <cstdint>
-#include <set>
 
 #include "ApProtocol.hpp"
 
 namespace smoap::ap {
+
+// Allocation-free fixed-capacity open-addressing hash set used for session
+// dedupe of location-check hashes. std::set::insert ends up calling into
+// libstdc++'s _Rb_tree node allocator, which on devkitA64 hits a TLS path
+// (nn::os::GetTlsValue with an unallocated slot) that NULL-derefs in our
+// subsdk9 context. The set isn't on a critical hot path — checks fire at
+// game-event rate, capped by N — so linear-probing is fine.
+//
+// N must be a power of 2. With N = 4096 we get 32 KiB of storage and can
+// hold up to ~3000 unique checks before probing degrades. Real seeds top out
+// around 1000 locations.
+template <std::size_t N>
+class FlatHashSet {
+    static_assert((N & (N - 1)) == 0, "N must be a power of 2");
+public:
+    // Returns true iff the value was newly inserted. Sentinel 0 is mapped to
+    // 1 internally so callers can pass any 64-bit hash. Table-full returns
+    // false (matches "already present" semantics — drops the check rather
+    // than re-sending it).
+    bool tryInsert(std::uint64_t h) {
+        if (h == 0) h = 1;
+        for (std::size_t i = 0; i < N; ++i) {
+            const std::size_t idx = (h + i) & (N - 1);
+            const std::uint64_t cur = slots_[idx];
+            if (cur == 0) {
+                slots_[idx] = h;
+                ++size_;
+                return true;
+            }
+            if (cur == h) return false;
+        }
+        return false;  // table full
+    }
+
+    void reset() {
+        for (auto& s : slots_) s = 0;
+        size_ = 0;
+    }
+
+    std::size_t size() const { return size_; }
+
+private:
+    std::uint64_t slots_[N] = {};
+    std::size_t size_ = 0;
+};
 
 enum class ConnState : std::uint8_t {
     Disconnected = 0,
@@ -51,6 +95,8 @@ private:
 
 struct StatusEvent {
     bool goal = false;
+    bool death = false;
+    std::int64_t ts_ms = 0;  // populated when death = true
 };
 
 class ApState {
@@ -69,10 +115,15 @@ public:
     // frame-thread-only state below
 
     std::bitset<128> captures_unlocked;     // 42 used; index from capture_table.h
-    std::set<std::uint64_t> locations_checked;  // session dedupe (hash of message body)
+    FlatHashSet<4096> locations_checked;    // session dedupe (hash of message body)
     std::uint32_t received_kingdom_mask = 0;
     bool goal_sent = false;
     bool synthetic_grant_this_frame = false;
+
+    // DeathLink debounce. Set by the frame thread when PlayerHitPointData::kill
+    // fires; cleared by the socket worker after the death message ships. A
+    // second kill() within the same death event short-circuits.
+    std::atomic<bool> death_pending_send{false};
 
     // Apply queued inbound items to the game (frame thread).
     void applyOnFrame();

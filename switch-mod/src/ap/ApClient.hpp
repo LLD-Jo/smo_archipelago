@@ -33,6 +33,11 @@ public:
     void start(const BridgeTarget& target);
     void stop();
 
+    // Frame-thread API: ask the worker to close + reopen its socket so a
+    // fresh HELLO triggers the bridge's checked_replay. SaveLoadHook calls
+    // this after a save reload clears our session dedupe set.
+    void requestRehello();
+
     // Pump outbound rings into the wire. Called by the socket thread.
     void pumpOnce();
 
@@ -49,6 +54,7 @@ private:
 
     BridgeTarget target_{};
     std::atomic<bool> running_{false};
+    std::atomic<bool> rehello_requested_{false};
     int socket_fd_{-1};
     std::string read_buf_;  // accumulator for partial lines
 };

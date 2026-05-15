@@ -15,6 +15,7 @@ from . import __version__, logging_setup
 from .ap_client import SmoApBridgeContext
 from .config import Config
 from .datapackage import DataPackage
+from .maps import CaptureMap, ShineMap
 from .state import BridgeState
 from .switch_server import SwitchServer
 from .tracker_web import serve_in_thread
@@ -60,6 +61,13 @@ def _resolve_apworld_data(explicit: Path | None) -> Path | None:
     return candidate if candidate.exists() else None
 
 
+def _resolve_map_path(explicit: str, filename: str) -> Path | None:
+    if explicit:
+        return Path(explicit)
+    here = Path(__file__).resolve().parent / "data" / filename
+    return here if here.exists() else None
+
+
 async def run(args: argparse.Namespace) -> int:
     cfg_path = _resolve_config_path(args.config)
     cfg = Config.load(cfg_path)
@@ -101,6 +109,10 @@ async def run(args: argparse.Namespace) -> int:
                 shine_id=msg.get("shine_id"),
                 cap=msg.get("cap"),
                 slot=msg.get("slot"),
+                stage_name=msg.get("stage_name"),
+                object_id=msg.get("object_id"),
+                shine_uid=msg.get("shine_uid"),
+                hack_name=msg.get("hack_name"),
             )
 
     async def on_goal() -> None:
@@ -108,17 +120,29 @@ async def run(args: argparse.Namespace) -> int:
         if ap is not None:
             await ap.report_goal()
 
+    async def on_death(ts_ms: int) -> None:
+        ap = ap_ctx_holder.get("ctx")
+        if ap is not None:
+            await ap.report_death(ts_ms)
+
     sw = SwitchServer(
         host=cfg.switch.listen_host,
         port=cfg.switch.listen_port,
         state=state,
         on_check=on_check,
         on_goal=on_goal,
+        on_death=on_death,
     )
     await sw.start()
 
     if web_tracker:
         serve_in_thread(state, host="0.0.0.0", port=cfg.bridge.web_port)
+
+    shine_map_path = _resolve_map_path(cfg.bridge.shine_map_path, "shine_map.json")
+    capture_map_path = _resolve_map_path(cfg.bridge.capture_map_path, "capture_map.json")
+    shine_map = ShineMap(shine_map_path)
+    capture_map = CaptureMap(capture_map_path)
+    log.info("DeathLink %s", "ENABLED" if cfg.deathlink.enabled else "disabled")
 
     ap = SmoApBridgeContext(
         server_addr=f"{cfg.ap.host}:{cfg.ap.port}",
@@ -128,9 +152,13 @@ async def run(args: argparse.Namespace) -> int:
         switch_send_item=sw.send_item,
         switch_send_print=sw.send_print,
         switch_send_ap_state=sw.send_ap_state,
+        switch_send_kill=sw.send_kill,
         state=state,
         datapackage=dp,
+        shine_map=shine_map,
+        capture_map=capture_map,
         archipelago_path=cfg.bridge.archipelago_path or None,
+        deathlink_enabled=cfg.deathlink.enabled,
     )
     ap_ctx_holder["ctx"] = ap
 

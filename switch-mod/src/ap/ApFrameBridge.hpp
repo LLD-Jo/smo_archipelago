@@ -5,21 +5,30 @@
 
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 namespace smoap::ap {
 
-// Called by MoonGetHook from the frame thread (game's main thread).
-// Dedupes via ApState::locations_checked.
-void reportMoonChecked(const std::string& kingdom, const std::string& shine_id);
+// M4: hooks pass raw SMO identifiers; the bridge resolves them to AP location
+// names. Switch-side dedupe still works via the FNV hash of the full Check.
+//
+// const char* overloads are cheaper for hook callbacks (no std::string alloc
+// on the frame thread). Null is treated as empty.
 
-// Called by CaptureStartHook (read-only path) from the frame thread.
-void reportCaptureChecked(const std::string& cap);
+// MoonGetHook -> sends raw {stage_name, object_id, shine_uid} to the bridge.
+void reportMoonChecked(const char* stage_name, const char* object_id, int shine_uid);
 
-// Called by ScenarioFlagHook to broadcast progress.
-void reportStatus(const std::string& kingdom, int scenario, int moons_collected);
+// CaptureStartHook -> sends raw hack_name (e.g. "Goomba", "Kuribo") to the bridge.
+void reportCaptureChecked(const char* hack_name);
 
-// Called by EndingHook exactly once per save when the goal triggers.
+// ScenarioFlagHook -> sends tracker-UI hint with the new scenario number.
+void reportStatus(const char* stage_name, int scenario_no);
+
+// EndingHook -> sends goal=true; idempotent via ApState::goal_sent.
 void reportGoal();
+
+// DeathHook -> sends death event; debounced via ApState::death_pending_send.
+void reportDeath();
 
 }  // namespace smoap::ap
