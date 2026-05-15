@@ -7,8 +7,13 @@
 // Thread sequence:
 //   1. start() (called from frame thread inside GameSystemInit hook):
 //      saves target, spawns worker, returns immediately.
-//   2. threadMain() bring-up: nn::nifm::Initialize ->
-//      SubmitNetworkRequestAndWait -> nn::socket::Initialize. Once.
+//   2. initNetworking() (frame thread, before start): nn::nifm::Initialize +
+//      SubmitNetworkRequestAndWait. nn::socket::Initialize is owned by SMO
+//      itself — it's already brought up by the time GameSystem::init returns
+//      (BSD RegisterClient happens during the Orig call). Calling Initialize
+//      a second time asserts inside InitializeCommon. LunaKit avoids this by
+//      installing a REPLACE no-op hook on nn::socket::Initialize and doing
+//      its own bring-up first; we just piggy-back on SMO's.
 //   3. threadMain() loop: connectOnce -> sendHello -> Select+recv read,
 //      pumpOnce drain outbound, error-on-disconnect with backoff retry.
 
@@ -18,6 +23,7 @@
 #include <cstring>
 
 #include "nn/nifm.h"
+#include "nn/os.h"
 #include "nn/socket.hpp"
 // nx.h is the C-linkage umbrella for libnx (svc + result + ...). Including
 // the inner headers directly from C++ gives C++ mangling and unresolved
@@ -38,22 +44,15 @@ constexpr int kSockStream  = 1;
 constexpr int kSolSocket   = 0xffff;
 constexpr int kSoKeepAlive = 0x0008;
 
-// Single TCP socket, ~8 KiB max payload — 256 KB is the canonical "single
-// socket" sizing leaving headroom for kernel-side metadata.
-constexpr std::size_t kSocketPoolSize = 0x40000;
-constexpr std::size_t kAllocPoolSize  = 0x20000;
-constexpr int         kConcurLimit    = 2;
-
 constexpr std::size_t kWorkerStackSize = 64 * 1024;
 
 // Exponential backoff caps (ms): 1s, 2s, 5s, 10s, 30s.
 constexpr std::uint32_t kBackoffCapMs = 30 * 1000;
 
-// Static buffers — exlaunch modules can't grow heap freely from background
-// threads. These are sized once and reused.
-alignas(0x4000) std::byte g_socket_pool[kSocketPoolSize];
+// Stack must be page-aligned; size must be a multiple of page size. nn::os
+// CreateThread takes the BASE address + size (svcCreateThread takes top).
 alignas(0x1000) std::byte g_worker_stack[kWorkerStackSize];
-Handle g_worker_thread = INVALID_HANDLE;
+nn::os::ThreadType g_worker_thread{};
 
 extern "C" void workerEntry(void* arg) {
     static_cast<ApClient*>(arg)->threadMain();
@@ -80,15 +79,10 @@ void ApClient::initNetworking() {
     const bool net_up = nn::nifm::IsNetworkAvailable();
     SMOAP_LOG_INFO("[frame] network available: %s", net_up ? "YES" : "NO");
 
-    SMOAP_LOG_INFO("[frame] nn::socket::Initialize (pool=%zu KB)",
-                   kSocketPoolSize / 1024);
-    const Result sock_rc = nn::socket::Initialize(g_socket_pool, kSocketPoolSize,
-                                                  kAllocPoolSize, kConcurLimit);
-    if (R_FAILED(sock_rc)) {
-        SMOAP_LOG_ERROR("[frame] nn::socket::Initialize FAILED rc=0x%x", sock_rc);
-        return;
-    }
-    SMOAP_LOG_INFO("[frame] networking ready");
+    // nn::socket::Initialize is intentionally NOT called here — SMO already
+    // initialized the BSD client during GameSystem::init (Orig). A second
+    // Initialize asserts inside nn::socket::detail::InitializeCommon.
+    SMOAP_LOG_INFO("[frame] networking ready (sockets owned by SMO)");
 }
 
 void ApClient::start(const BridgeTarget& target) {
@@ -96,18 +90,30 @@ void ApClient::start(const BridgeTarget& target) {
     running_ = true;
     SMOAP_LOG_INFO("ApClient::start target=%s:%u", target.host.c_str(), target.port);
 
-    // Use the kernel SVC directly (lunakit pattern) to avoid pulling in nn::os
-    // implementation headers that bloat the module.
-    const Result rc = svcCreateThread(
-        &g_worker_thread, reinterpret_cast<void*>(&workerEntry), this,
-        g_worker_stack + kWorkerStackSize,  // stack-top, not stack-base
-        /*priority=*/0x20, /*cpuid=*/-2);   // -2 = default core
+    // Use nn::os::CreateThread (NOT raw svcCreateThread): the worker calls
+    // nn::socket::Socket which is an IPC to the bsd: service, and IPC needs
+    // per-thread nn-runtime state that only nn::os-managed threads have.
+    // Raw svcCreateThread threads NULL-deref inside HipcSimpleClientSession
+    // Manager::Allocate -> InternalCriticalSectionImplByHorizon::Enter.
+    // Use the no-coreNum overload — nn::os picks the process's default core
+    // internally. The 7-arg overload would forward our value to the kernel
+    // SVC, which only accepts 0..N (process-allowed cores) or -2 ("default");
+    // -1 / IdealCoreDontCare returns InvalidCoreId from svcCreateThread.
+    //
+    // Priority must be in nn::os range [0, 31] (0 = highest, 16 = default,
+    // 31 = lowest). svcCreateThread accepts a wider 0..63 range; nn::os is
+    // stricter and aborts InvalidPriority on anything outside [0, 31].
+    const Result rc = nn::os::CreateThread(
+        &g_worker_thread, &workerEntry, this,
+        g_worker_stack, kWorkerStackSize,
+        /*priority=*/16);
     if (R_FAILED(rc)) {
-        SMOAP_LOG_ERROR("ApClient: svcCreateThread failed (rc=0x%x)", rc);
+        SMOAP_LOG_ERROR("ApClient: nn::os::CreateThread failed (rc=0x%x)", rc);
         running_ = false;
         return;
     }
-    svcStartThread(g_worker_thread);
+    nn::os::SetThreadName(&g_worker_thread, "smoap-worker");
+    nn::os::StartThread(&g_worker_thread);
 }
 
 void ApClient::stop() {
@@ -119,11 +125,11 @@ void ApClient::stop() {
 void ApClient::threadMain() {
     SMOAP_LOG_INFO("[worker] thread started, target=%s:%u",
                    target_.host.c_str(), target_.port);
-    // nifm + socket Initialize were done on the frame thread inside
-    // GameSystemInitHook::Callback because they're nn-IPC calls and the
-    // raw-svcCreateThread worker can't make those. Worker only does
-    // socket-level ops (Socket, Connect, Send, Recv, Select) which
-    // empirically work on raw threads.
+    // nifm Initialize was done on the frame thread inside
+    // GameSystemInitHook::Callback because it's an nn-IPC call and our
+    // raw-svcCreateThread worker can't make those. Socket bring-up is
+    // SMO's; the worker only does socket-level ops (Socket, Connect,
+    // Send, Recv, Select) which empirically work on raw threads.
     SMOAP_LOG_INFO("[worker] entering connect loop");
 
     std::uint32_t backoff_ms = target_.retry_ms;

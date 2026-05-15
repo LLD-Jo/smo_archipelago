@@ -41,7 +41,7 @@ The PC bridge owns AP-protocol complexity (websocket + deflate + TLS + reconnect
 | **4 — Symbol discovery (M0)** | Mangled symbols in `switch-mod/src/hooks/HookSymbols.hpp` | **DONE + VERIFIED.** All 8 symbols resolve in real 1.0.0 main.nso (`scripts/check_nso_symbols.py`). 3 byte-identical to lunakit's verified 1.0.0 hooks; 5 computed from OdysseyDecomp forward-decls. Runtime `nn::ro::LookupSymbol` will succeed |
 | **5 — Ryujinx dev loop** | Build deploys to emulator, validates before Switch | **DONE.** `-DRYU_PATH=C:/Users/maxwe/AppData/Roaming/Ryujinx` post-build hook copies subsdk9+npdm+config into Ryujinx mods |
 | **6 — Generate test seed** | Use forked apworld in Archipelago checkout to make a seed | Not started; needs Archipelago submodule add first |
-| **7 — Real-Switch deploy** | Final validation after Ryujinx green | Blocked on Ryujinx clean boot first |
+| **7 — Real-Switch deploy** | Final validation after Ryujinx green | Ryujinx green (2026-05-15: HELLO observed end-to-end). Ready when desired |
 
 ## Plan milestones
 
@@ -50,7 +50,7 @@ The PC bridge owns AP-protocol complexity (websocket + deflate + TLS + reconnect
 - **M0**: toolchain + symbol map (Track 3 + Track 4) — **DONE**
 - **M1**: bridge skeleton — **CODE COMPLETE** (19 tests pass, loopback smoke test green, web tracker JSON endpoint verified)
 - **M2**: apworld parity fork — **CODE COMPLETE** (vendored `data/`, `creator: archipelago`)
-- **M3**: Switch module skeleton — **CODE COMPLETE** (subsdk9 + main.npdm produced via lunakit stock template; all 8 hooks install via soft-install probe; `nn::socket` worker thread connects, sends HELLO, processes inbound items idempotently with exponential backoff; `ap_config.json` reads from SD romfs at runtime; lm-log heartbeat every 60 frames). Awaits Ryujinx boot of SMO 1.0.0 + subsdk9.
+- **M3**: Switch module skeleton — **RUNTIME VALIDATED** (2026-05-15, Ryujinx). Subsdk9 + main.npdm produced via lunakit stock template; all 8 hooks install via soft-install probe; `nn::socket` worker thread connects, sends HELLO, bridge logs `switch HELLO: mod=0.1.0 smo=1.0.0`. Inbound-item handler / replay / exponential backoff are code-complete but not yet exercised. Real-Switch deploy gated on user choice; Ryujinx loop is canonical for now.
 - **M4**: read-only state mirroring (moon-get + capture-get hooks) — fill MoonGetHook/CaptureStartHook trampoline bodies + extractShineCoords
 - **M5**: web tracker — **CODE COMPLETE** (Flask + SSE, served on :8000)
 - **M6**: item application (received items → GameDataHolder writes)

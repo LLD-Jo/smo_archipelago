@@ -55,6 +55,14 @@ HOOK_DEFINE_TRAMPOLINE(GameSystemInitHook) {
         // make those.
         smoap::ap::ApClient::instance().initNetworking();
 
+        // Force Meyer's-singleton construction on this nn-aware frame thread.
+        // The worker runs on a raw svcCreateThread and lacks the nn TLS that
+        // __cxa_guard_acquire's mutex needs — first call from there NULL-derefs
+        // inside InternalCriticalSectionImplByHorizon::Enter. Touching every
+        // singleton here flips its guard byte to "initialized" so the worker's
+        // later calls take the fast path and skip the lock.
+        (void)smoap::ap::ApState::instance();
+
         SMOAP_LOG_INFO("starting ApClient worker");
         smoap::ap::ApClient::instance().start(smoap::ap::BridgeTarget{
             .host = cfg.bridge_host,

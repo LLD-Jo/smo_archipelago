@@ -86,7 +86,9 @@
       "Bash(xxd -l 0x80 'D:\\\\atmosphere\\\\contents\\\\0100000000010000\\\\exefs\\\\main.npdm')",
       "Bash(xxd -l 0x80 'C:\\\\Users\\\\maxwe\\\\smo-dump\\\\exefs\\\\main.npdm')",
       "Bash(DEVKITPRO='C:/devkitPro' '/c/Program Files/CMake/bin/cmake.exe' --install build --verbose)",
-      "PowerShell(Get-Volume *)"
+      "PowerShell(Get-Volume *)",
+      "WebFetch(domain:gbatemp.net)",
+      "WebFetch(domain:blog.ryujinx.org)"
     ]
   }
 }
