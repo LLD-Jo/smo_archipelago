@@ -58,6 +58,8 @@ def test_extracted_anchor_resolves() -> None:
     Confirmed live: Mario collects 'Our First Power Moon' in Ryujinx ->
     MoonGetHook fires with stage=WaterfallWorldHomeStage, obj=obj214.
     """
+    if not SHINE_MAP_PATH.exists():
+        pytest.skip(f"{SHINE_MAP_PATH} not generated; run scripts/extract_shine_map.py")
     m = ShineMap(SHINE_MAP_PATH)
     res = m.resolve("WaterfallWorldHomeStage", "obj214")
     assert res == MoonResolution(kingdom="Cascade", shine_id="Our First Power Moon")
@@ -100,6 +102,8 @@ def test_capture_map_alias_table_semantics() -> None:
     CAPTURE_NAME_ALIASES semantics stay tested. Kept intentionally small to
     avoid bulk transcription of the Nintendo internal-name -> English table.
     """
+    if not CAPTURE_MAP_PATH.exists():
+        pytest.skip(f"{CAPTURE_MAP_PATH} not generated; run scripts/extract_shine_map.py")
     m = CaptureMap(CAPTURE_MAP_PATH)
     # canonical Japanese internal -> apworld English (most-known anchor)
     assert m.resolve("Kuribo") == "Goomba"
