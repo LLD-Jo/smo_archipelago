@@ -7,7 +7,7 @@ from collections import namedtuple
 
 import pytest
 
-from smo_ap_bridge.scout_cache import ScoutCache, ScoutInfo, request_scout
+from client.scout_cache import ScoutCache, ScoutInfo, request_scout
 
 
 # Minimal stand-in for AP's NetworkItem; the cache treats it duck-typed.
@@ -118,7 +118,7 @@ def test_request_scout_no_ops_when_nothing_to_send():
 
 
 def test_request_scout_chunks_large_request():
-    from smo_ap_bridge import scout_cache as sc
+    from client import scout_cache as sc
 
     sent: list[list[dict]] = []
 

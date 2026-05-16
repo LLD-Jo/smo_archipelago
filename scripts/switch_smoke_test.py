@@ -1,12 +1,13 @@
-"""Fake Switch — drives the bridge end-to-end over loopback.
+"""Fake Switch — drives the SMOClient's SwitchServer end-to-end over loopback.
 
-Usage (assumes bridge is already running on localhost:17777):
-    python scripts/bridge_smoke_test.py
+Usage (assumes SMOClient is already running on localhost:17777, launched
+either via the Archipelago Launcher's "SMO Client" button or directly):
+    python scripts/switch_smoke_test.py
 
 Sequence:
   1. Connect to localhost:17777
   2. Send HELLO
-  3. Print every message the bridge sends back
+  3. Print every message the client sends back
   4. Every 5s, send a synthetic check (cycles through a small canned list)
 
 Stop with Ctrl-C.

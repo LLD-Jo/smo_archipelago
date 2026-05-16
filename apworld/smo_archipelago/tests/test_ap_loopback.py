@@ -1,12 +1,14 @@
 """Live AP loopback test.
 
-Spawns a real MultiServer subprocess with a freshly-generated seed, brings up
-a SmoApBridgeContext against it, drives a location check, and asserts an item
-arrives back at the (mocked) Switch socket. This is the pytest version of the
-M5.5 manual smoke test — it pins the AP-side wiring against regression.
+Spawns a real MultiServer subprocess with a freshly-generated seed,
+brings up an SMOContext against it, drives a location check, and
+asserts an item arrives back at the (stubbed) Switch socket. This is
+the pytest version of the M5.5 manual smoke test — it pins the AP-side
+wiring against regression.
 
 Skipped by default. Enable with `SMOAP_LIVE_AP=1` to opt in:
-  SMOAP_LIVE_AP=1 bridge/.venv/Scripts/python -m pytest -v bridge/tests/test_ap_loopback.py
+  SMOAP_LIVE_AP=1 bridge/.venv/Scripts/python -m pytest -v \\
+      apworld/smo_archipelago/tests/test_ap_loopback.py
 
 Requires: Archipelago checkout at vendor/Archipelago (with deps installed),
 the forked apworld zip in vendor/Archipelago/custom_worlds/ (run
@@ -17,7 +19,6 @@ websockets==13.1.
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 import socket
 import subprocess
@@ -27,24 +28,65 @@ from pathlib import Path
 
 import pytest
 
-from smo_ap_bridge.ap_client import SmoApBridgeContext
-from smo_ap_bridge.datapackage import DataPackage
-from smo_ap_bridge.maps import CaptureMap, ShineMap
-from smo_ap_bridge.protocol import ItemMsg, KillMsg
-from smo_ap_bridge.state import BridgeState
-
-REPO = Path(__file__).resolve().parent.parent.parent
+REPO = Path(__file__).resolve().parents[3]
 AP_ROOT = REPO / "vendor" / "Archipelago"
-SEEDS_DIR = REPO / "bridge" / "test_seeds"
+# Loopback seed yaml ships next to this test; generated artifacts go in
+# `seeds/out/` (gitignored).
+SEEDS_DIR = Path(__file__).resolve().parent / "seeds"
 SEEDS_OUT = SEEDS_DIR / "out"
 APWORLD_DATA = REPO / "apworld" / "smo_archipelago" / "data"
 
+# Phase 2: importing SMOContext requires CommonClient on sys.path. The
+# live-AP gate already implies the user set up vendor/Archipelago + venv
+# deps, so this is safe at module load.
+if AP_ROOT.exists() and str(AP_ROOT) not in sys.path:
+    sys.path.insert(0, str(AP_ROOT))
+
+try:  # pragma: no cover
+    import ModuleUpdate  # type: ignore[import-not-found]
+    ModuleUpdate.update_ran = True
+except ImportError:
+    pass
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("SMOAP_LIVE_AP") != "1",
     reason="set SMOAP_LIVE_AP=1 to run the live AP loopback test "
            "(spawns MultiServer subprocess; requires Archipelago deps installed)",
 )
+
+# Imported inside the skipif gate via pytest.importorskip so collection
+# doesn't fail on hosts without Archipelago.
+CommonClient = pytest.importorskip("CommonClient")
+
+from CommonClient import server_loop  # noqa: E402
+
+from client.context import SMOContext  # noqa: E402
+from client.datapackage import DataPackage  # noqa: E402
+from client.maps import CaptureMap, ShineMap  # noqa: E402
+from client.protocol import ItemMsg, KillMsg  # noqa: E402
+from client.state import BridgeState  # noqa: E402
+
+
+class _StubSwitch:
+    """Minimum SwitchServer surface used by SMOContext during this test."""
+
+    def __init__(self) -> None:
+        self.items: list[ItemMsg] = []
+        self.kills: list[KillMsg] = []
+        self.prints: list[str] = []
+        self.ap_states: list[str] = []
+
+    async def send_item(self, item: ItemMsg) -> None:
+        self.items.append(item)
+
+    async def send_kill(self, k: KillMsg) -> None:
+        self.kills.append(k)
+
+    async def send_print(self, text: str) -> None:
+        self.prints.append(text)
+
+    async def send_ap_state(self, conn: str) -> None:
+        self.ap_states.append(conn)
 
 
 def _free_port() -> int:
@@ -75,7 +117,6 @@ def _find_seed_file() -> Path:
         ],
         check=True,
     )
-    # ap_generate.py produces a .zip; extract the .archipelago inside.
     import zipfile
     for z in SEEDS_OUT.glob("AP_*.zip"):
         with zipfile.ZipFile(z) as zf:
@@ -101,7 +142,6 @@ def multiserver():
         text=True,
     )
     try:
-        # Wait until the server logs `server listening`.
         deadline = time.time() + 20
         ready = False
         while time.time() < deadline:
@@ -125,48 +165,33 @@ def multiserver():
 async def test_loopback_check_returns_item(multiserver):
     port = multiserver
 
-    items_received: list[ItemMsg] = []
-    ap_state_buffer: list[str] = []
-
-    async def stub_send_item(m: ItemMsg) -> None:
-        items_received.append(m)
-
-    async def noop(*_args, **_kwargs) -> None:
-        pass
-
-    async def stub_send_ap_state(s: str) -> None:
-        ap_state_buffer.append(s)
-
     state = BridgeState()
     dp = DataPackage(apworld_data_dir=APWORLD_DATA)
+    sw = _StubSwitch()
 
-    ctx = SmoApBridgeContext(
-        server_addr=f"localhost:{port}",
-        slot="Mario",
-        password="",
-        items_handling=7,
-        switch_send_item=stub_send_item,
-        switch_send_print=noop,
-        switch_send_ap_state=stub_send_ap_state,
-        switch_send_kill=noop,
+    ctx = SMOContext(
+        server_address=f"localhost:{port}",
+        password=None,
         state=state,
         datapackage=dp,
         shine_map=ShineMap(),
         capture_map=CaptureMap(),
     )
+    ctx.auth = "Mario"
+    ctx.switch = sw  # type: ignore[assignment]
 
-    await ctx.start()
+    server_task = asyncio.create_task(server_loop(ctx), name="ap-server-loop")
     try:
-        # Wait for the AP context to reach `ready`.
+        # Wait for AP context to reach `ready`.
         for _ in range(60):
             if state.ap_conn == "ready":
                 break
             await asyncio.sleep(0.1)
         assert state.ap_conn == "ready", \
-            f"bridge never reached ap_conn=ready (got {state.ap_conn!r})"
-        assert "ready" in ap_state_buffer
+            f"context never reached ap_conn=ready (got {state.ap_conn!r})"
+        assert "ready" in sw.ap_states
 
-        # Datapackage should be hydrated from CommonContext.
+        # Datapackage should be hydrated from CommonContext on Connected.
         assert "Cap: Frog-Jumping Above the Fog" in dp.location_name_to_id
 
         # Drive a check. With items_handling=7 + single-slot the server
@@ -179,15 +204,17 @@ async def test_loopback_check_returns_item(multiserver):
 
         # Wait for the item to arrive on the Switch side.
         for _ in range(30):
-            if items_received:
+            if sw.items:
                 break
             await asyncio.sleep(0.1)
-        assert items_received, "no ItemMsg arrived at the Switch within 3s"
-        first = items_received[0]
+        assert sw.items, "no ItemMsg arrived at the Switch within 3s"
+        first = sw.items[0]
         assert first.from_ == "Mario"
-        # The placed item is some moon variant in this single-slot seed; both
-        # ItemKind.MOON and ItemKind.OTHER are acceptable depending on whether
-        # the apworld classifies it as a kingdom-specific or generic moon.
         assert first.kind in ("moon", "other"), f"unexpected kind {first.kind!r}"
     finally:
-        await ctx.stop()
+        server_task.cancel()
+        try:
+            await server_task
+        except (asyncio.CancelledError, Exception):
+            pass
+        await ctx.shutdown()

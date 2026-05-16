@@ -7,9 +7,9 @@ This file is a fast-load brief for picking up the **Spicy Meatball Overdrive** p
 This repository is open-source and built on a careful line: **functional identifiers and reference apworld names are okay; bulk-extracted Nintendo content is not.** A misstep here exposes the user to DMCA risk. Before any commit, audit `git status` + `git diff` and refuse to stage anything from this list:
 
 **Must NEVER be committed (already gitignored — keep it that way):**
-- `bridge/smo_ap_bridge/data/shine_map.json` — full extracted (stage, obj_id) → display-name table. Generated per-machine by `scripts/extract_shine_map.py`. ~775 verbatim Nintendo USen strings.
-- `bridge/smo_ap_bridge/data/capture_map.json` — `hack_name → english_name` table. ~52 verbatim Nintendo USen strings.
-- `bridge/smo_ap_bridge/data/shine_map_review.json` and `capture_map_review.json` — diagnostics that include the same strings.
+- `apworld/smo_archipelago/client/data/shine_map.json` — full extracted (stage, obj_id) → display-name table. Generated per-machine by `scripts/extract_shine_map.py`. ~775 verbatim Nintendo USen strings.
+- `apworld/smo_archipelago/client/data/capture_map.json` — `hack_name → english_name` table. ~52 verbatim Nintendo USen strings.
+- `apworld/smo_archipelago/client/data/shine_map_review.json` and `capture_map_review.json` — diagnostics that include the same strings.
 - `.romfs-cache/` — extracted RomFS (~5 GB of Nintendo assets).
 - `scripts/.extract-venv/` — local Python 3.12 venv (not IP, but big and machine-specific).
 - `docs/main-*.nso`, `*.nsp`, `*.nca`, `*.byml`, `*.szs`, `*.msbt` — any raw Nintendo binary.
@@ -29,17 +29,29 @@ This repository is open-source and built on a careful line: **functional identif
 
 A real Archipelago client for **Super Mario Odyssey on a modded Switch (FW 21.2, native SMO 1.0.0 install, Atmosphere CFW)**. Replaces the existing Manual checklist client ([empathy-mp3/SMO-manual-AP](https://github.com/empathy-mp3/SMO-manual-AP)) — an honor-system tick-the-boxes app — with an in-game module that detects moons/captures/scenario events automatically, applies received items live, and enforces capture locks until the AP item arrives.
 
-### Architecture (three tiers)
+### Architecture (two tiers)
 
 ```
-[ Switch / SMO ]  <--TCP/JSON LAN-->  [ PC Bridge (Python) ]  <--websocket-->  [ AP server ]
-   exlaunch                              CommonContext                              archipelago.gg
-   LunaKit headers                       Flask web tracker                          or self-host
-   ImGui overlay (M8)                    Forked apworld
-   HUD overlay (M3)
+[ Switch / SMO ]  <--TCP/JSON LAN-->  [ PC Client (Python, inside apworld) ]  <--websocket-->  [ AP server ]
+   exlaunch                              SMOContext(CommonContext)                              archipelago.gg
+   LunaKit headers                       Kivy GUI (Tracker + Connections tabs)                  or self-host
+   ImGui overlay (M8)                    SwitchServer asyncio TCP on :17777
+   HUD overlay (M3)                      Forked apworld machinery
 ```
 
-The PC bridge owns AP-protocol complexity (websocket + deflate + TLS + reconnect). Switch speaks a small line-delimited JSON protocol on port **17777**. Full wire format: `docs/wire-protocol.md`.
+The PC client (formerly the standalone "bridge" process) lives inside the apworld at
+`apworld/smo_archipelago/client/` and ships in the .apworld zip. Archipelago's Launcher
+auto-discovers it via the `Component("SMO Client", ...)` registration in the apworld's
+`__init__.py`. One process, one Kivy window, one install artifact.
+
+The merge happened in the Phase-1-through-7 reshape (see plan
+`C:\Users\maxwe\.claude\plans\please-put-together-a-playful-thacker.md`). Before that,
+this was a separate `python -m smo_ap_bridge` script with a Flask web tracker on :8000;
+that whole tree was deleted and its responsibilities absorbed into the Kivy client.
+
+The client owns AP-protocol complexity (websocket + deflate + TLS + reconnect, all
+inherited from `CommonContext`). Switch speaks a small line-delimited JSON protocol on
+port **17777**. Full wire format: `docs/wire-protocol.md`.
 
 ## Decisions already made (and why)
 
@@ -110,29 +122,33 @@ C:\Users\maxwe\Documents\smo_archipelago\
   CLAUDE.md                      ← this file
   LICENSE                        MIT
   .gitignore                     Note: third_party/ ignored; vendor/ tracked
-  .gitmodules                    (after `git submodule add`)
-  apworld/                       Forked manual_smo_mp3 → smo_archipelago
-    smo_archipelago/             Full package; only `data/game.json` creator field changed
-    README.md
-  bridge/                        Python bridge — 102 tests pass (+1 live-AP skipped, 2 extraction tests flake in fresh worktrees pending capture_map.json)
-    smo_ap_bridge/
-      __main__.py
-      config.py                  TOML loader, CLI overrides, env var SMOAP_PASSWORD / SMOAP_AP_PATH
-      protocol.py                Wire-format dataclasses (Switch ↔ Bridge), iter_lines, MAX_LINE_BYTES
-      ap_client.py               CommonContext subclass; three-tier Archipelago path resolution
-      switch_server.py           asyncio TCP server, line-JSON framing, replay on HELLO
-      datapackage.py             AP id↔name + classifier (Moon/Capture/Kingdom/Shop/Other)
-      state.py                   Thread-safe state mirror for tracker + replay
-      tracker_web.py             Flask app on :8000, /api/snapshot, /api/test/inject-deathlink (debug)
-      scout_cache.py             M6 phase A.5: LocationScouts pre-fetch so Channel A labels beat AP round-trip
-      display.py                 M6 phase A.5: Channel A label formatting (UTF-8-safe truncation + kingdom shortening)
-      logging_setup.py
-    tests/                       102 passing (live-AP + 2 extraction tests auto-skip when prereqs absent)
-    pyproject.toml
-    requirements.txt
-    config.example.toml
-  switch-mod/                    exlaunch C++ module
-    CMakeLists.txt               Builds subsdk9 from lunakit stock templates; no FW 22+ hacks
+  .gitmodules                    Submodules (vendor/Archipelago, lunakit-vendor)
+  apworld/smo_archipelago/       Forked manual_smo_mp3 → smo_archipelago apworld + client
+    __init__.py                  World class + SMOSettings + "SMO Client" Component reg
+    data/                        items.json / locations.json / regions.json / categories.json
+    hooks/                       Manual-framework hook surfaces (Rules, Options, World, ...)
+    Data.py, Game.py, ...        Manual framework boilerplate
+    ManualClient.py              Vestigial — NOT Launcher-registered; kept because the Manual
+                                 framework references it. The active client is client/main.py.
+    client/                      Python client (replaces the old standalone `bridge/`)
+      __init__.py                Empty / lightweight; never pulls Kivy
+      main.py                    Launcher entry point; `def launch(*args)` invoked via Component
+      context.py                 SMOContext(CommonContext) + SMOClientCommandProcessor
+      gui.py                     SmoManager(GameManager) — Kivy UI; imported lazily inside run_gui
+      switch_server.py           asyncio TCP server on :17777; replay on HELLO
+      protocol.py, state.py      Wire-format dataclasses + thread-safe state mirror
+      datapackage.py, maps.py    AP id↔name + classifier + ShineMap / CaptureMap
+      scout_cache.py, display.py Channel A: LocationScouts pre-fetch + label formatting
+      commands.py                Pure `parse_command` for the /-commands in context.py
+      config.py, logging_setup.py  Legacy TOML overlay (kept for back-compat) + log config
+      data/                      shine_map.json + capture_map.json (gitignored; regenerated)
+    tests/                       113 passing (55 skipped: live-AP gated on SMOAP_LIVE_AP=1
+                                 + extraction tests need shine/capture maps present)
+      pyproject.toml             Self-contained pytest config (importmode=importlib)
+      conftest.py                Inserts apworld/smo_archipelago/ into sys.path
+      seeds/                     Loopback test seeds (smo_loopback.yaml + gitignored out/)
+  switch-mod/                    exlaunch C++ module — unchanged by the client merge
+    CMakeLists.txt               Builds subsdk9 from lunakit stock templates
     src/
       main.cpp                   exl_main entry — installs hooks, spawns worker
       ap/{ApClient,ApState,ApConfig,ApFrameBridge,ApProtocol}.{cpp,hpp}
@@ -141,25 +157,31 @@ C:\Users\maxwe\Documents\smo_archipelago\
       hooks/{MoonGet,CaptureStart,ScenarioFlag,SaveLoad,Ending,MoonLabel}Hook.cpp
       game/{MoonApply,CaptureGate,KingdomUnlock}.{cpp,hpp}
       ui/ApHudOverlay.{cpp,hpp}
-      util/{Json,Log}.{cpp,hpp}  Json reader implemented; rest stubs
-    romfs/ap_config.json         Switch reads at runtime for bridge IP
-    lunakit-vendor/              Vendored LunaKit submodule (toolchain + templates + libs)
+      util/{Json,Log}.{cpp,hpp}
+    romfs/ap_config.json         Switch reads at runtime for the bridge IP
+    lunakit-vendor/              Vendored LunaKit submodule
   scripts/
-    bridge_smoke_test.py         Fake-Switch end-to-end test
+    switch_smoke_test.py         Fake-Switch end-to-end test (formerly bridge_smoke_test.py)
     sync_capture_table.py        items.json → capture_table.h (use this; ps1 also exists)
-    sync_capture_table.ps1
-    extract_shine_map.py         M5.8: NSP → romfs → shine_map.json + capture_map.json (self-bootstrapping)
-    .extract-venv/               Auto-created Python 3.12 venv with oead (gitignored)
+    extract_shine_map.py         M5.8: NSP → romfs → shine_map.json + capture_map.json
+    install_apworld.py           Zips apworld/smo_archipelago/ → vendor/.../custom_worlds/
+    ap_generate.py, ap_server.py Archipelago Generate/MultiServer wrappers (auto-pip suppressed)
+    .extract-venv/               Auto-created Python 3.12 venv (gitignored)
   docs/
-    architecture.md              Three-tier diagram, threading, responsibilities
+    architecture.md              Two-tier diagram, threading, responsibilities
     wire-protocol.md             14 message types with examples
     build-windows.md             Toolchain install
-    extract-moon-data.md         M5.8: how to generate shine_map.json + capture_map.json from your dump
+    extract-moon-data.md         How to generate shine_map.json + capture_map.json
     install-switch.md            SD card layout, troubleshooting
   vendor/                        For submodules (Archipelago goes here)
   third_party/                   Local clones — gitignored
     SMO-manual-AP/               Reference clone of upstream Manual world
 ```
+
+**Note on `bridge/`**: the directory is GONE from the repo source. Contributors with a pre-merge
+checkout will see a leftover `bridge/.venv/` (gitignored) — that's their old dev venv. The
+bridge venv can be reused as the SMOClient venv (Archipelago's deps are a superset of what we
+need); just point at it via `bridge/.venv/Scripts/python` when running tests.
 
 ## External paths (outside the repo)
 
@@ -236,49 +258,74 @@ Critical bug we hit twice. `lunakit-vendor/src/lib/nx/kernel/svc.h` and `lib/nx/
 
 `sd:/...` paths in nn::fs are NOT accessible by default in our process. SMO doesn't mount the SD via the Nintendo SDK API (its asset path goes through `sead::FileDeviceMgr` to RomFS). To use `nn::fs::OpenFile("sd:/...")` we must call `nn::fs::MountSdCardForDebug("sd")` once. LunaKit does this by hooking `sead::FileDeviceMgr` ctor. We do it inline in our `GameSystemInitHook::Callback` (plus a fallback in `DrawMainHook` first-call). Without this, `nn::fs::CreateFile` aborts via internal `GetFreeSpaceSize` because "sd:" is unmounted.
 
-## How to run the bridge
+## How to run the client
 
 ```pwsh
-cd C:\Users\maxwe\Documents\smo_archipelago\bridge
-.\.venv\Scripts\python -m pytest                            # 80 tests pass (1 skipped: live-AP)
-.\.venv\Scripts\python -m smo_ap_bridge --no-web-tracker    # without web tracker
-.\.venv\Scripts\python -m smo_ap_bridge --config config.local.toml --web-tracker  # full
+# Run tests (113 pass, 55 skipped — live-AP/extraction gated)
+cd C:\Users\maxwe\Documents\smo_archipelago
+.\bridge\.venv\Scripts\python -m pytest apworld\smo_archipelago\tests\
+
+# Launch via the Archipelago Launcher (the canonical user flow)
+.\bridge\.venv\Scripts\python vendor\Archipelago\Launcher.py
+# → click "SMO Client" in the GUI
+
+# Headless / scripted launch
+.\bridge\.venv\Scripts\python vendor\Archipelago\Launcher.py "SMO Client" `
+    --connect localhost:38281 --name Mario
 ```
 
-Bridge listens on `0.0.0.0:17777` (Switch TCP) and `0.0.0.0:8000` (web tracker). AP-side connection requires `vendor/Archipelago/` submodule with deps installed (see "Loopback dev setup" in README).
+SMO Client listens on `0.0.0.0:17777` (Switch TCP) by default — override via
+`~/.archipelago/host.yaml` under `manual_smo_archipelago_options.switch_listen_port`
+or `--switch-port` on the command line.
+
+Settings live in `host.yaml`:
+```yaml
+manual_smo_archipelago_options:
+  switch_listen_host: "0.0.0.0"
+  switch_listen_port: 17777
+  shine_map_path: ""          # empty falls back to client/data/shine_map.json
+  capture_map_path: ""
+  deathlink_default: false
+```
 
 ## AP loopback (recommended pre-Ryujinx test)
 
-Validates the whole bridge↔AP stack without booting SMO. After fresh clone:
+Validates the whole Switch↔Client↔AP stack without booting SMO. After fresh clone:
 
 ```pwsh
-# Build apworld zip
-bridge/.venv/Scripts/python scripts/install_apworld.py
+# Build apworld zip (re-run after any apworld/client/__init__.py change)
+.\bridge\.venv\Scripts\python scripts\install_apworld.py
 
 # Generate test seed (one-time per apworld change)
-bridge/.venv/Scripts/python scripts/ap_generate.py `
-    --player_files_path bridge/test_seeds --outputpath bridge/test_seeds/out
+.\bridge\.venv\Scripts\python scripts\ap_generate.py `
+    --player_files_path apworld\smo_archipelago\tests\seeds `
+    --outputpath apworld\smo_archipelago\tests\seeds\out
 
 # Unzip the .archipelago server file out of the player zip
-bridge/.venv/Scripts/python -c "import zipfile, glob; [zipfile.ZipFile(z).extractall('bridge/test_seeds/out') for z in glob.glob('bridge/test_seeds/out/AP_*.zip')]"
+.\bridge\.venv\Scripts\python -c "import zipfile, glob; [zipfile.ZipFile(z).extractall('apworld/smo_archipelago/tests/seeds/out') for z in glob.glob('apworld/smo_archipelago/tests/seeds/out/AP_*.zip')]"
 
 # Host server (pane A)
-bridge/.venv/Scripts/python scripts/ap_server.py --port 38281 bridge/test_seeds/out/AP_*.archipelago
+.\bridge\.venv\Scripts\python scripts\ap_server.py --port 38281 `
+    apworld\smo_archipelago\tests\seeds\out\AP_*.archipelago
 
-# Bridge (pane B) — needs bridge/config.local.toml with host=localhost slot=Mario
-bridge/.venv/Scripts/python -m smo_ap_bridge --config bridge/config.local.toml
+# Launch SMO Client (pane B) — connects to localhost
+.\bridge\.venv\Scripts\python vendor\Archipelago\Launcher.py "SMO Client" `
+    --connect localhost:38281 --name Mario
 
-# Drive checks (pane C)
-python scripts/bridge_smoke_test.py
+# Drive a fake Switch (pane C)
+python scripts\switch_smoke_test.py
 # Expect: each `>> check` mirrored by a `<< item` within ~1s
 
 # Or scripted via pytest:
-$env:SMOAP_LIVE_AP="1"; bridge/.venv/Scripts/python -m pytest -v bridge/tests/test_ap_loopback.py
+$env:SMOAP_LIVE_AP="1"
+.\bridge\.venv\Scripts\python -m pytest -v `
+    apworld\smo_archipelago\tests\test_ap_loopback.py
 ```
 
-Quick old-style smoke test (Switch-only, no AP server):
+Quick old-style smoke test (Switch-only, no AP server, just exercises the
+SwitchServer):
 ```pwsh
-python C:\Users\maxwe\Documents\smo_archipelago\scripts\bridge_smoke_test.py
+python C:\Users\maxwe\Documents\smo_archipelago\scripts\switch_smoke_test.py
 ```
 
 ## What's next
@@ -308,9 +355,9 @@ All three are GameDataHolder reads/writes. Symbol set is in `switch-mod/src/hook
 ## Test commands worth knowing
 
 ```pwsh
-# Bridge tests (Python)
-cd C:\Users\maxwe\Documents\smo_archipelago\bridge
-python -m pytest -v
+# Client tests (Python) — 113 pass + 55 skip (live-AP / extraction gated)
+cd C:\Users\maxwe\Documents\smo_archipelago
+.\bridge\.venv\Scripts\python -m pytest apworld\smo_archipelago\tests\ -v
 
 # Switch-module host tests (C++ via standalone msys2 mingw64 g++; devkitPro
 # does NOT ship a host compiler — devkitA64 is AArch64-only). Build + run
@@ -336,8 +383,8 @@ $env:DEVKITPRO = "C:/devkitPro"
 # Regenerate capture table after apworld change
 python C:\Users\maxwe\Documents\smo_archipelago\scripts\sync_capture_table.py
 
-# Loopback smoke test (with bridge running separately)
-python C:\Users\maxwe\Documents\smo_archipelago\scripts\bridge_smoke_test.py
+# Loopback smoke test (with SMOClient running separately)
+python C:\Users\maxwe\Documents\smo_archipelago\scripts\switch_smoke_test.py
 ```
 
 **Critical cross-build gotcha**: msys2 cmake (`/c/devkitPro/msys2/usr/bin/cmake`) inside Git Bash CANNOT find DEVKITPRO (it expects `/opt/devkitpro` mount which Git Bash doesn't have). Use the Windows CMake at `C:/Program Files/CMake/bin/cmake.exe` with `DEVKITPRO=C:/devkitPro` env var.
@@ -354,8 +401,8 @@ python scripts/extract_shine_map.py --nsp <SMO_1.0.0.nsp>
 
 Self-bootstraps a Python 3.12 venv with `oead` (no 3.13 wheel exists), runs `hactool` to extract RomFS (~5 GB cache at `.romfs-cache/`), then:
 
-- **Moons**: walks the 17 `ShineList_<HomeStage>.byml` files in `SystemData/ShineInfo.szs`, joins each `ObjId` against the per-stage MSBT in `LocalizedData/USen/MessageData/StageMessage.szs` under key `ScenarioName_<ObjId>`. 775 entries → `bridge/smo_ap_bridge/data/shine_map.json` (gitignored).
-- **Captures**: walks `SystemData/HackObjList.szs` (130 internal `HackName` strings), joins against `SystemMessage.szs/HackList.msbt` where the label *is* the internal name and the value is the English string. 52 deduped entries → `bridge/smo_ap_bridge/data/capture_map.json` (gitignored).
+- **Moons**: walks the 17 `ShineList_<HomeStage>.byml` files in `SystemData/ShineInfo.szs`, joins each `ObjId` against the per-stage MSBT in `LocalizedData/USen/MessageData/StageMessage.szs` under key `ScenarioName_<ObjId>`. 775 entries → `apworld/smo_archipelago/client/data/shine_map.json` (gitignored).
+- **Captures**: walks `SystemData/HackObjList.szs` (130 internal `HackName` strings), joins against `SystemMessage.szs/HackList.msbt` where the label *is* the internal name and the value is the English string. 52 deduped entries → `apworld/smo_archipelago/client/data/capture_map.json` (gitignored).
 
 Ground-truth conventions discovered during build:
 - Moon MSBT lookup is in the **per-shine StageName MSBT**, NOT the HomeStage MSBT — sub-stages like `PushBlockExStage` carry their own `ScenarioName_<obj>` entries.
@@ -391,16 +438,16 @@ M6-phase-A.5 mod (`subsdk9`) auto-deployed from the worktree build:
    need to be hooked. Original plan's open question #1 (in
    [i-wrote-a-plan-fluffy-otter.md](../../.claude/plans/i-wrote-a-plan-fluffy-otter.md))
    is resolved.
-3. **Bridge bootstrap gotcha discovered**: a fresh worktree does NOT have
-   `bridge/smo_ap_bridge/data/{shine_map,capture_map}.json` (gitignored;
-   per-machine). The bridge starts up cleanly without them but every
-   moon collect logs `no shine_map entry for stage='X' object='Y'` and
-   silently drops the check — no LocationCheck, no MoonLabelMsg,
-   cutscene stays vanilla. The fix is to either copy the files from the
-   main repo or run `scripts/extract_shine_map.py`. **Future agents:
-   copy these two files into a fresh worktree as part of bridge setup**
-   (the `bridge/smo_ap_bridge/data/` directory itself doesn't exist
-   either, so `mkdir -p` first).
+3. **Client bootstrap gotcha discovered**: a fresh worktree does NOT have
+   `apworld/smo_archipelago/client/data/{shine_map,capture_map}.json`
+   (gitignored; per-machine). The client starts up cleanly without them
+   but every moon collect logs `no shine_map entry for stage='X'
+   object='Y'` and silently drops the check — no LocationCheck, no
+   MoonLabelMsg, cutscene stays vanilla. The fix is to either copy the
+   files from the main repo or run `scripts/extract_shine_map.py`.
+   **Future agents: copy these two files into a fresh worktree as part
+   of client setup** (the `apworld/smo_archipelago/client/data/`
+   directory exists; if missing, `mkdir -p` first).
 
 ## M6.6 (deferred, next milestone)
 
@@ -450,10 +497,10 @@ works end-to-end before committing to a UI choice.
   retroactively-applied checks). Could mitigate by waiting on the
   scout cache to fully warm before flipping `display_enabled = True`.
 - **`AP-server KeyError on scout for missing locations`** — fix at
-  [ap_client.py](bridge/smo_ap_bridge/ap_client.py): the warmup now
+  [context.py](apworld/smo_archipelago/client/context.py): the warmup
   scopes to `ctx.missing_locations | ctx.checked_locations` instead of
   the full datapackage. Otherwise a single not-in-this-slot location_id
-  in the scout request kills the websocket connection → bridge reconnect
+  in the scout request kills the websocket connection → client reconnect
   loop. Burned ~30 minutes finding this one during playtest setup.
 - **`apworld/.../data/{items,locations,regions}.json` invariant**: the
   Multi-Moon rework removed the kingdom-agnostic `Power Moon` item but
@@ -473,21 +520,28 @@ works end-to-end before committing to a UI choice.
 
 ## M6 phase-A playtest loop
 
-Bridge has a `--repl` mode for direct item injection (no AP server required):
+The SMOClient ships `/`-commands for direct item injection (no AP server
+required). Launch the client via the Archipelago Launcher, then type into
+the command bar at the bottom of the Kivy window:
 
-```pwsh
-bridge/.venv/Scripts/python -m smo_ap_bridge --config bridge/config.local.toml --repl
-# Then at the prompt:
-#   smo-ap-bridge> grant Cascade Kingdom Power Moon
-#   smo-ap-bridge> grant Power Moon
-#   smo-ap-bridge> grant Cascade Kingdom Multi-Moon
-#   smo-ap-bridge> capture Goomba
-#   smo-ap-bridge> kingdom Sand
-#   smo-ap-bridge> label Sent Cap Power Moon -> P3       (M6 phase A.5 — visual test of Channel A)
-#   smo-ap-bridge> status
-#   smo-ap-bridge> help
+```
+/grant Cascade Kingdom Power Moon
+/grant Cascade Kingdom Multi-Moon
+/capture Goomba
+/kingdom Sand
+/label Sent Cap Power Moon -> P3       (M6 phase A.5 — visual test of Channel A)
+/smo_status
+/inject_deathlink TestRig manual       (debug: synthesize an inbound DeathLink)
+/help
 ```
 
-Items route through `DataPackage.classify_item` so wire fidelity matches real AP-issued items. `from=repl` on the mod side distinguishes them from AP grants in log lines.
+Items route through `commands.parse_command` → `DataPackage.classify_item`
+so wire fidelity matches real AP-issued items. `from=repl` on the mod side
+distinguishes them from AP grants in log lines.
+
+Before Phase 5 these commands were typed at the standalone bridge's stdin
+REPL (`python -m smo_ap_bridge --repl`); both the bridge process and that
+flag are gone. The pure parser kept the same shape; only the I/O surface
+moved from stdin to Kivy.
 
 `label <text>` directly writes a `MoonLabelMsg` to the Switch's `pending_moon_label` slot — useful for visual testing the cutscene-label hook standalone (collect any moon in Ryujinx within ~4s of running the command and the text appears in the moon-get cutscene). Real bridge↔AP Channel A use needs a live AP server so the `LocationScouts` warmup populates the `scout_cache` from which `_dispatch_check` synthesizes labels on-the-fly.

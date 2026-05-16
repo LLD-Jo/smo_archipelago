@@ -10,14 +10,14 @@ from pathlib import Path
 
 import pytest
 
-from smo_ap_bridge.datapackage import DataPackage
-from smo_ap_bridge.protocol import ItemKind
-from smo_ap_bridge.repl import parse_command
-from smo_ap_bridge.state import BridgeState
+from client.datapackage import DataPackage
+from client.protocol import ItemKind
+from client.commands import parse_command
+from client.state import BridgeState
 
 
 # Resolve the in-repo apworld data dir so tests use the real categories.
-_APWORLD = Path(__file__).resolve().parents[2] / "apworld" / "smo_archipelago" / "data"
+_APWORLD = Path(__file__).resolve().parents[1] / "data"
 
 
 @pytest.fixture
@@ -109,7 +109,7 @@ def test_capture_command(dp, state):
 
 def test_capture_command_with_capture_map_populates_hack_name(dp, state, tmp_path):
     """REPL `capture <cap>` populates hack_name via the reverse CaptureMap."""
-    from smo_ap_bridge.maps import CaptureMap
+    from client.maps import CaptureMap
     import json
     cm_path = tmp_path / "capture_map.json"
     cm_path.write_text(json.dumps([
@@ -126,7 +126,7 @@ def test_capture_command_with_capture_map_populates_hack_name(dp, state, tmp_pat
 
 def test_capture_command_with_capture_map_identity_passthrough(dp, state, tmp_path):
     """1:1 cap names without a map entry pass through identically."""
-    from smo_ap_bridge.maps import CaptureMap
+    from client.maps import CaptureMap
     import json
     cm_path = tmp_path / "capture_map.json"
     cm_path.write_text(json.dumps([]), encoding="utf-8")  # empty
@@ -203,8 +203,8 @@ def test_capture_with_class_flag(dp, state):
 
 def test_status_after_received_item(dp, state):
     # Inject a moon item directly into state to simulate prior REPL activity.
-    from smo_ap_bridge.protocol import ItemRef
-    from smo_ap_bridge.state import ItemEvent
+    from client.protocol import ItemRef
+    from client.state import ItemEvent
 
     state.add_received_item(ItemEvent(
         item=ItemRef(kind="moon", kingdom="Cap", shine_id="Power Moon"),

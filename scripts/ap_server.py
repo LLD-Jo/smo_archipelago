@@ -6,8 +6,8 @@ don't need (e.g. dolphin-memory-engine).
 
 Usage (same args as MultiServer.py):
 
-    bridge/.venv/Scripts/python scripts/ap_server.py \
-        --port 38281 bridge/test_seeds/out/AP_*.archipelago
+    .venv/Scripts/python scripts/ap_server.py \
+        --port 38281 apworld/smo_archipelago/tests/seeds/out/AP_*.archipelago
 """
 
 from __future__ import annotations

@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pytest
 
-REPO = Path(__file__).resolve().parent.parent.parent
+REPO = Path(__file__).resolve().parents[3]
 AP_ROOT = REPO / "vendor" / "Archipelago"
 GEN_SCRIPT = REPO / "scripts" / "ap_generate.py"
 INSTALL_SCRIPT = REPO / "scripts" / "install_apworld.py"

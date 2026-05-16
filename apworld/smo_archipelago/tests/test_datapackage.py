@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from smo_ap_bridge.datapackage import DataPackage
-from smo_ap_bridge.protocol import ItemKind
+from client.datapackage import DataPackage
+from client.protocol import ItemKind
 
-APWORLD_DATA = Path(__file__).resolve().parent.parent.parent / "apworld" / "smo_archipelago" / "data"
+APWORLD_DATA = Path(__file__).resolve().parent.parent / "data"
 
 
 @pytest.fixture(scope="module")

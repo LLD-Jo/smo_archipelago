@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from smo_ap_bridge.maps import CaptureMap, MoonResolution, ShineMap
+from client.maps import CaptureMap, MoonResolution, ShineMap
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "smo_ap_bridge" / "data"
+DATA_DIR = Path(__file__).resolve().parent.parent / "client" / "data"
 SHINE_MAP_PATH = DATA_DIR / "shine_map.json"
 CAPTURE_MAP_PATH = DATA_DIR / "capture_map.json"
 

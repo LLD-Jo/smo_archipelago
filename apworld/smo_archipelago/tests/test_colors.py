@@ -3,8 +3,8 @@ BridgeState shine-palette accessors used by the scout-replay path."""
 
 from __future__ import annotations
 
-from smo_ap_bridge.config import ColorsConfig
-from smo_ap_bridge.state import BridgeState
+from client.config import ColorsConfig
+from client.state import BridgeState
 
 
 def test_colors_config_defaults_are_distinct():

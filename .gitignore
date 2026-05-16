@@ -10,10 +10,13 @@ venv/
 *.coverage
 htmlcov/
 
-# Bridge runtime
-bridge/config.toml
-bridge/logs/
-bridge/*.log
+# Client runtime (formerly the bridge directory; bridge/ was deleted in
+# the Phase 4 merge that moved the bridge into apworld/smo_archipelago/
+# client/. Any leftover bridge/.venv in a contributor's worktree should
+# be relocated; keeping the rule around so leftover logs don't drift in).
+bridge/
+apworld/smo_archipelago/client/logs/
+apworld/smo_archipelago/client/*.log
 
 # Switch build (NOT submodule paths — those are tracked via .gitmodules)
 switch-mod/build/
@@ -29,10 +32,14 @@ docs/ghidra/
 
 # Game data extracted from SMO romfs — copyrighted Nintendo content, must
 # regenerate on each user's machine. See docs/extract-moon-data.md.
-bridge/smo_ap_bridge/data/shine_map.json
-bridge/smo_ap_bridge/data/shine_map_review.json
-bridge/smo_ap_bridge/data/capture_map.json
-bridge/smo_ap_bridge/data/capture_map_review.json
+apworld/smo_archipelago/client/data/shine_map.json
+apworld/smo_archipelago/client/data/shine_map_review.json
+apworld/smo_archipelago/client/data/capture_map.json
+apworld/smo_archipelago/client/data/capture_map_review.json
+
+# Live-AP loopback test artifacts (generated seeds; regenerated on demand
+# by apworld/smo_archipelago/tests/test_ap_loopback.py).
+apworld/smo_archipelago/tests/seeds/out/
 .romfs-cache/
 scripts/.extract-venv/
 

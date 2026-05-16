@@ -7,10 +7,10 @@ import json
 
 import pytest
 
-from smo_ap_bridge import protocol
-from smo_ap_bridge.protocol import HelloMsg, ItemMsg, ItemRef, ItemKind
-from smo_ap_bridge.state import BridgeState, ItemEvent, CheckEvent
-from smo_ap_bridge.switch_server import SwitchServer
+from client import protocol
+from client.protocol import HelloMsg, ItemMsg, ItemRef, ItemKind
+from client.state import BridgeState, ItemEvent, CheckEvent
+from client.switch_server import SwitchServer
 
 
 @pytest.mark.asyncio

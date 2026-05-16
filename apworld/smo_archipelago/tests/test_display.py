@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from smo_ap_bridge.datapackage import ClassifiedItem
-from smo_ap_bridge.display import (
+from client.datapackage import ClassifiedItem
+from client.display import (
     MAX_MOON_LABEL_BYTES,
     format_moon_label,
     truncate_utf8,
 )
-from smo_ap_bridge.protocol import ItemKind
+from client.protocol import ItemKind
 
 
 # --- truncate_utf8 -----------------------------------------------------

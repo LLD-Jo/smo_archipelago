@@ -3,14 +3,14 @@
 Generate.py's first action is `ModuleUpdate.update()` which iterates through
 the full requirements.txt and tries to pip-install every missing dep — even
 world-specific deps we don't need (dolphin-memory-engine, kivy, etc.). We
-ship our own minimal network-only dep set in the bridge venv, so suppress
+ship our own minimal network-only dep set in our dev venv, so suppress
 the auto-pip by short-circuiting `update_ran` before Generate imports it.
 
 Usage (same args as Generate.py):
 
-    bridge/.venv/Scripts/python scripts/ap_generate.py \
-        --player_files_path bridge/test_seeds \
-        --outputpath bridge/test_seeds/out
+    .venv/Scripts/python scripts/ap_generate.py \
+        --player_files_path apworld/smo_archipelago/tests/seeds \
+        --outputpath apworld/smo_archipelago/tests/seeds/out
 """
 
 from __future__ import annotations

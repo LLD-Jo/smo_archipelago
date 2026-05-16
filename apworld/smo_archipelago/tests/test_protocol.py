@@ -6,8 +6,8 @@ import json
 
 import pytest
 
-from smo_ap_bridge import protocol
-from smo_ap_bridge.protocol import (
+from client import protocol
+from client.protocol import (
     CheckMsg,
     Classification,
     HelloAckMsg,

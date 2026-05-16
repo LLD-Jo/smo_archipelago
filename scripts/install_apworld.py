@@ -25,7 +25,9 @@ DST_DIR = REPO / "vendor" / "Archipelago" / "custom_worlds"
 DST = DST_DIR / "smo_archipelago.apworld"
 
 # These get shipped inside the zip and never produce real source content.
-SKIP_NAMES = {"__pycache__", ".mypy_cache", ".ruff_cache", ".pytest_cache"}
+# `tests` is the in-apworld pytest tree — useful for dev but bloats the
+# install and pulls in seeds the user doesn't need at runtime.
+SKIP_NAMES = {"__pycache__", ".mypy_cache", ".ruff_cache", ".pytest_cache", "tests"}
 
 
 def main() -> int:

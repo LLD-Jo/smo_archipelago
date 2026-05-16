@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from smo_ap_bridge.maps import CaptureMap, MoonResolution, ShineMap
+from client.maps import CaptureMap, MoonResolution, ShineMap
 
 
 def _write(tmp_path: Path, name: str, entries: list) -> Path:

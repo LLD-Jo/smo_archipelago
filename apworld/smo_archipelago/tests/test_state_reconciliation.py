@@ -20,8 +20,8 @@ import json
 
 import pytest
 
-from smo_ap_bridge import protocol
-from smo_ap_bridge.protocol import (
+from client import protocol
+from client.protocol import (
     HelloMsg,
     ItemKind,
     ItemRef,
@@ -29,8 +29,8 @@ from smo_ap_bridge.protocol import (
     StateChunkMsg,
     StateEndMsg,
 )
-from smo_ap_bridge.state import BridgeState, CheckEvent
-from smo_ap_bridge.switch_server import SwitchServer
+from client.state import BridgeState, CheckEvent
+from client.switch_server import SwitchServer
 
 
 # ----- Direct unit tests on BridgeState's snapshot accumulator -----

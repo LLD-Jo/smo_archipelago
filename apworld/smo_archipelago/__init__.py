@@ -2,9 +2,11 @@ from base64 import b64encode
 import logging
 import os
 import json
+import typing
 from typing import Callable, Optional
 
 import Utils
+import settings
 from worlds.generic.Rules import forbid_items_for_player
 from worlds.LauncherComponents import Component, SuffixIdentifier, components, Type, launch_subprocess
 
@@ -34,12 +36,53 @@ from .hooks.World import \
     before_fill_slot_data, after_fill_slot_data, before_write_spoiler
 from .hooks.Data import hook_interpret_slot_data
 
+class SMOSettings(settings.Group):
+    """SMO Client settings. Lives in `~/.archipelago/host.yaml` under the
+    `manual_smo_archipelago_options:` key. Auto-created with defaults on
+    first load; users edit to override.
+
+    Example yaml block:
+
+      manual_smo_archipelago_options:
+        switch_listen_host: "0.0.0.0"
+        switch_listen_port: 17777
+        deathlink_default: false
+    """
+
+    class SwitchListenHost(str):
+        """Bind address for the Switch TCP server (default 0.0.0.0)."""
+
+    class SwitchListenPort(int):
+        """Port for the Switch TCP server (default 17777). The Switch mod
+        is built against this — change the mod's BRIDGE_HOST/PORT too."""
+
+    class ShineMapPath(settings.UserFilePath):
+        """Path to a custom shine_map.json. Default empty falls back to
+        apworld/smo_archipelago/client/data/shine_map.json. Generated
+        per-machine by scripts/extract_shine_map.py — see
+        docs/extract-moon-data.md."""
+        description = "shine_map.json"
+
+    class CaptureMapPath(settings.UserFilePath):
+        """Path to a custom capture_map.json. Default empty falls back to
+        apworld/smo_archipelago/client/data/capture_map.json. Generated
+        alongside shine_map.json."""
+        description = "capture_map.json"
+
+    switch_listen_host: SwitchListenHost = SwitchListenHost("0.0.0.0")
+    switch_listen_port: SwitchListenPort = SwitchListenPort(17777)
+    shine_map_path: ShineMapPath = ShineMapPath("")
+    capture_map_path: CaptureMapPath = CaptureMapPath("")
+    deathlink_default: typing.Union[settings.Bool, bool] = False
+
+
 class ManualWorld(World):
     __doc__ = world_description
     game: str = game_name
     web = world_webworld
 
     options_dataclass = manual_options_data
+    settings: typing.ClassVar[SMOSettings]
     data_version = 2
     required_client_version = (0, 3, 4)
 
@@ -400,25 +443,25 @@ class ManualWorld(World):
 ###
 
 def launch_client(*args):
-    from .ManualClient import launch as Main
-    launch_subprocess(Main, name="Manual client")
+    """Archipelago Launcher entry point for the SMO Client.
 
-class VersionedComponent(Component):
-    def __init__(self, display_name: str, script_name: Optional[str] = None, func: Optional[Callable] = None, version: int = 0, file_identifier: Optional[Callable[[str], bool]] = None):
-        super().__init__(display_name=display_name, script_name=script_name, func=func, component_type=Type.CLIENT, file_identifier=file_identifier)
-        self.version = version
+    The "SMO Client" button in the Launcher subprocesses into this; we then
+    pull the heavyweight client modules (which import Archipelago's
+    CommonClient AND, lazily, Kivy) only inside the subprocess so generation
+    on headless hosts never sees Kivy imports.
+    """
+    from .client.main import launch
+    launch_subprocess(launch, name="SMOClient", args=args)
 
-def add_client_to_launcher() -> None:
-    version = 2024_07_09 # YYYYMMDD
-    found = False
-    for c in components:
-        if c.display_name == "Manual Client":
-            found = True
-            if getattr(c, "version", 0) < version:  # We have a newer version of the Manual Client than the one the last apworld added
-                c.version = version
-                c.func = launch_client
-                return
-    if not found:
-        components.append(VersionedComponent("Manual Client", "ManualClient", func=launch_client, version=version, file_identifier=SuffixIdentifier('.apmanual')))
 
-add_client_to_launcher()
+# Single canonical client button: SMO Client. Routes by game_name so the
+# Launcher's slot-file double-click flow finds this Component for any
+# .archipelago slot whose game is "Manual_SMO_archipelago". The earlier
+# "Manual Client" registration is gone — that was the upstream Manual
+# framework's generic honor-system UI, and it never talked to the Switch.
+components.append(Component(
+    "SMO Client",
+    func=launch_client,
+    component_type=Type.CLIENT,
+    game_name=game_name,
+))
