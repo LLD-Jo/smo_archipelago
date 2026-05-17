@@ -49,6 +49,7 @@ from .build import (
 )
 from .deploy import (
     DeployResult,
+    deploy_to_custom_folder,
     deploy_to_ryujinx,
     deploy_to_sd,
     detect_ryujinx_path,
@@ -82,6 +83,28 @@ def save_setup_state(state: dict[str, Any]) -> None:
         p.write_text(json.dumps(state, indent=2), encoding="utf-8")
     except OSError as e:
         log.warning("failed to write setup_state.json: %s", e)
+
+
+def _wizard_log_path():
+    return appdata_root() / "wizard.log"
+
+
+def wizard_log(line: str) -> None:
+    """Append a breadcrumb to %APPDATA%/SMOArchipelago/wizard.log.
+
+    Independent of the per-step extract.log (which only covers the
+    extract subprocess) — this captures page transitions, deploy
+    handler entry/exit, populate() execution, exception tracebacks,
+    etc. so a "black screen, no text" report has SOMETHING for us to
+    read after the fact.
+    """
+    import time
+    try:
+        p = _wizard_log_path()
+        with open(p, "a", encoding="utf-8") as f:
+            f.write(f"[{time.strftime('%H:%M:%S')}] {line}\n")
+    except OSError:
+        pass  # best-effort; log losing a line shouldn't break the wizard
 
 
 # ---------------------------------------------------------------------------
@@ -158,20 +181,23 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
 
     # ----------------------------- shared state ---------------------------
 
+    saved_state = load_setup_state()
     wizard_state: dict[str, Any] = {
         "smoap_path": smoap_path,
         "smoap": parse_smoap(Path(smoap_path)) if smoap_path else None,
         "nsp_path": None,        # Path | None
         "bridge_ip": detect_lan_ip(),
         "build_done": False,     # set True when cmake completes
-        "deploy_target": load_setup_state().get("deploy_target", "ryujinx"),
+        "deploy_target": saved_state.get("deploy_target", "ryujinx"),
         "ryujinx_root": str(detect_ryujinx_path() or ""),
         "sd_root": "",
+        "custom_root": saved_state.get("custom_root", ""),
         # Set by the Done page's "Launch SMOClient" button before stopping
         # Kivy. The caller (in __init__.py) reads this after `App().run()`
         # returns and performs the actual SMOClient launch.
         "launch_smoclient_after_close": False,
     }
+    wizard_log(f"=== wizard start (smoap={smoap_path!r}) ===")
 
     sm = ScreenManager()
 
@@ -641,10 +667,11 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
         root.add_widget(_h1("Deploy target"))
         root.add_widget(_label("Where should we copy the compiled mod?"))
 
-        # Two radio rows.
+        # Three radio rows.
         sd_candidates = detect_sd_candidates()
         sd_default = str(sd_candidates[0]) if sd_candidates else ""
         wizard_state["sd_root"] = sd_default
+        wizard_state.setdefault("custom_root", "")
 
         # Ryujinx row
         ryu_row = BoxLayout(orientation="horizontal", size_hint_y=None,
@@ -670,6 +697,50 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
         sd_row.add_widget(sd_input)
         root.add_widget(sd_row)
 
+        # Custom-folder row — for users who want to manage the SD-card
+        # sync themselves (UMS later, DBI / Goldleaf transfer, staging on
+        # a network share, etc.). Writes the same atmosphere/contents/...
+        # subtree the SD-card deploy produces, just under the chosen
+        # folder root.
+        custom_row = BoxLayout(orientation="horizontal", size_hint_y=None,
+                               height=48, spacing=8)
+        custom_cb = CheckBox(group="target",
+                              active=(wizard_state["deploy_target"] == "custom"))
+        custom_row.add_widget(custom_cb)
+        custom_row.add_widget(_label("Custom folder:", size_hint_x=0.3))
+        custom_input = TextInput(
+            text=wizard_state["custom_root"] or "(click Browse to pick a folder)",
+            multiline=False,
+        )
+        custom_row.add_widget(custom_input)
+        browse_btn = Button(text="Browse...", size_hint_x=None, width=100)
+        custom_row.add_widget(browse_btn)
+        root.add_widget(custom_row)
+
+        def open_custom_picker(_i):
+            # Tk's askdirectory is the cleanest cross-platform folder
+            # picker — Kivy's FileChooserListView is file-oriented and
+            # awkward for picking dirs. Tk is stdlib so no extra dep.
+            try:
+                import tkinter
+                import tkinter.filedialog
+                tkroot = tkinter.Tk()
+                tkroot.withdraw()
+                # Always-on-top so it isn't hidden behind the Kivy window.
+                tkroot.attributes("-topmost", True)
+                chosen = tkinter.filedialog.askdirectory(
+                    title="Pick a custom deploy folder",
+                    parent=tkroot,
+                )
+                tkroot.destroy()
+                if chosen:
+                    custom_input.text = chosen
+                    custom_cb.active = True
+            except Exception as e:
+                wizard_log(f"custom-folder picker failed: {e!r}")
+                status.text = f"Folder picker failed: {e}"
+        browse_btn.bind(on_release=open_custom_picker)
+
         redetect = Button(text="Re-detect", size_hint_y=None, height=40)
         def do_redetect(_i):
             cands = detect_sd_candidates()
@@ -687,9 +758,11 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
         s.add_widget(root)
 
         def do_deploy_and_continue() -> None:
+            wizard_log("do_deploy_and_continue: entered")
             try:
                 outputs = collect_build_outputs()
             except FileNotFoundError as e:
+                wizard_log(f"do_deploy_and_continue: build outputs missing: {e}")
                 status.text = f"Build outputs missing: {e}"
                 return
             if ryu_cb.active:
@@ -697,6 +770,7 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
                 if not target.is_dir():
                     status.text = f"Ryujinx folder does not exist: {target}"
                     return
+                wizard_log(f"deploy_to_ryujinx target={target}")
                 result = deploy_to_ryujinx(target, outputs)
                 wizard_state["deploy_target"] = "ryujinx"
                 wizard_state["ryujinx_root"] = str(target)
@@ -705,12 +779,32 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
                 if not target.exists():
                     status.text = f"SD card path does not exist: {target}"
                     return
+                wizard_log(f"deploy_to_sd target={target}")
                 result = deploy_to_sd(target, outputs)
                 wizard_state["deploy_target"] = "sd"
                 wizard_state["sd_root"] = str(target)
+            elif custom_cb.active:
+                target = Path(custom_input.text.strip())
+                # Custom folder needn't already exist — we'll create it.
+                # But the parent must exist and be a directory; otherwise
+                # we'd silently create folder trees in surprising places.
+                if not target.parent.exists():
+                    status.text = (
+                        f"Custom folder parent does not exist: {target.parent}"
+                    )
+                    return
+                target.mkdir(parents=True, exist_ok=True)
+                wizard_log(f"deploy_to_custom_folder target={target}")
+                result = deploy_to_custom_folder(target, outputs)
+                wizard_state["deploy_target"] = "custom"
+                wizard_state["custom_root"] = str(target)
             else:
-                status.text = "Pick a deploy target (Ryujinx or SD)."
+                status.text = "Pick a deploy target (Ryujinx, SD card, or Custom folder)."
                 return
+            wizard_log(
+                f"deploy result ok={result.ok} target={result.target!r} "
+                f"files={len(result.files)} error={result.error!r}"
+            )
             if not result.ok:
                 status.text = f"Deploy failed: {result.error}"
                 return
@@ -718,8 +812,10 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
                 "deploy_target": wizard_state["deploy_target"],
                 "ryujinx_root": wizard_state["ryujinx_root"],
                 "sd_root": wizard_state["sd_root"],
+                "custom_root": wizard_state["custom_root"],
             })
             wizard_state["deploy_result"] = result
+            wizard_log("deploy succeeded; transitioning to 'done' page")
             goto("done")
 
         return s
@@ -730,7 +826,7 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
         root = BoxLayout(orientation="vertical", padding=20, spacing=12)
         root.add_widget(_h1("Setup complete"))
 
-        def populate(*_):
+        def _populate_inner() -> None:
             root.clear_widgets()
             root.add_widget(_h1("Setup complete"))
             result: DeployResult | None = wizard_state.get("deploy_result")
@@ -738,18 +834,30 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
                 summary = (
                     f"Copied {len(result.files)} files to {result.target}.\n\n"
                     "What to do next:\n"
-                    "  - For a real Switch: eject your SD card, plug it into "
-                    "the Switch, boot SMO. The mod loads automatically.\n"
+                    "  - For a real Switch (SD card deploy): eject your SD "
+                    "card, plug it into the Switch, boot SMO. The mod loads "
+                    "automatically.\n"
                     "  - For Ryujinx: boot SMO in Ryujinx; the mod is "
-                    "already in the mods directory.\n\n"
+                    "already in the mods directory.\n"
+                    "  - For Custom folder: the files are laid out under "
+                    "`atmosphere/contents/0100000000010000/{exefs,romfs}/` "
+                    "inside the folder you picked. Copy that whole subtree "
+                    "to your SD card's root (or onto the Switch however you "
+                    "prefer).\n\n"
                     "Re-run this wizard only if your bridge PC's LAN IP "
                     "changes (or you want to switch deploy targets). AP "
                     "server / slot changes don't need a rebuild — type "
                     "/connect or use the Connect bar in SMOClient."
                 )
-                root.add_widget(_label(summary))
+                # Multi-line summary needs explicit height proportional to
+                # content; the standard _label() helper hardcodes 32px which
+                # would clip everything past the first line. 240px fits the
+                # 12-line summary at default font size and gives us breathing
+                # room if a sentence reflows.
+                summary_lbl = _label(summary, height=240)
+                root.add_widget(summary_lbl)
             launch_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=48)
-            if wizard_state["smoap"] is not None:
+            if wizard_state.get("smoap") is not None:
                 launch_btn = Button(text=f"Launch SMOClient as {wizard_state['smoap'].slot_name}")
                 launch_btn.bind(on_release=lambda _i: launch_smoclient_now())
                 launch_row.add_widget(launch_btn)
@@ -757,6 +865,33 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
             close_btn.bind(on_release=lambda _i: App.get_running_app().stop())
             launch_row.add_widget(close_btn)
             root.add_widget(launch_row)
+
+        def populate(*_):
+            """Done-page builder. Wrapped in try/except so a render error
+            becomes a visible "setup is done but the wizard couldn't
+            render the summary" page rather than a black screen with no
+            text (v0.1.8-alpha bug report). Either way, the user is
+            free to close the wizard — setup IS complete; this is just
+            the post-deploy UI."""
+            wizard_log(f"populating Done page; deploy_result={wizard_state.get('deploy_result')!r}")
+            try:
+                _populate_inner()
+            except Exception as e:
+                import traceback
+                tb = traceback.format_exc()
+                wizard_log(f"populate() crashed: {e!r}\n{tb}")
+                # Fallback minimal UI so the user sees text + can close.
+                root.clear_widgets()
+                root.add_widget(_h1("Setup complete (rendering issue)"))
+                root.add_widget(_label(
+                    f"Setup finished but the Done page failed to render: {e}\n\n"
+                    f"This does NOT mean setup failed — your build is deployed.\n"
+                    f"Full traceback at {_wizard_log_path()}.",
+                    height=120,
+                ))
+                close_btn = Button(text="Close", size_hint_y=None, height=48)
+                close_btn.bind(on_release=lambda _i: App.get_running_app().stop())
+                root.add_widget(close_btn)
 
         s.bind(on_pre_enter=populate)
         return s
