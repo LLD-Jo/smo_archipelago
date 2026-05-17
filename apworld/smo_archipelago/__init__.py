@@ -17,6 +17,7 @@ from worlds.LauncherComponents import (
     components,
     Type,
     icon_paths,
+    launch as launch_or_subprocess,
     launch_subprocess,
 )
 
@@ -505,7 +506,18 @@ def launch_smo_client(*args):
     smoap_path = next((a for a in args if a.endswith(".smoap")), None)
 
     if not is_setup_complete():
-        launch_subprocess(
+        # `launch` (not `launch_subprocess`) is critical for the file-association
+        # entry path. When the AP frozen installer routes a `.smoap` double-click,
+        # `is_kivy_running()` is False — `launch` runs the wizard inline in the
+        # Launcher's main process, where Kivy boots cleanly. The
+        # `launch_subprocess` alternative spawns via `multiprocessing.Process`
+        # which in PyInstaller-frozen builds re-enters with a half-initialized
+        # bootstrap and Kivy fails to load `library.zip/kivy/data/style.kv`
+        # (reproduced in v0.1.1-alpha). On a GUI-button click instead,
+        # `is_kivy_running()` is True and `launch` falls back to the subprocess
+        # path; that path is still broken under frozen + multiprocessing + Kivy
+        # but isn't on the user-facing file-association flow this fix targets.
+        launch_or_subprocess(
             _run_setup_wizard_with_smoap if smoap_path else _run_setup_wizard_no_smoap,
             name="SMOSetup",
             args=(smoap_path,) if smoap_path else (),
@@ -539,20 +551,36 @@ def launch_smo_client(*args):
 def _run_smo_client_with_args(*args: str) -> None:
     """Module-level subprocess entry: launch SMOClient with given args.
 
-    Top-level callable (not a closure) so `launch_subprocess`'s pickling
-    machinery can reach it by qualified name. Used by both
-    `launch_smo_client` (for the setup-done path) and by the wizard's
-    "Launch SMOClient now" button (for the setup-just-finished path)."""
-    from .client.main import launch
-    launch_subprocess(launch, name="SMOClient", args=args)
+    Top-level callable (not a closure) so the subprocess-pickling path can
+    reach it by qualified name. Used by both `launch_smo_client` (for the
+    setup-done path) and by the wizard's "Launch SMOClient now" button (for
+    the setup-just-finished path).
+
+    Uses `launch` (not `launch_subprocess`) so a file-association invocation
+    — where no Launcher GUI Kivy is yet running — boots SMOClient inline in
+    the main Launcher process. Spawning via `multiprocessing.Process` from
+    inside a PyInstaller-frozen ArchipelagoLauncher.exe yields a child whose
+    Kivy can't read its bundled `style.kv` out of `library.zip`."""
+    from .client.main import launch as smoclient_launch
+    launch_or_subprocess(smoclient_launch, name="SMOClient", args=args)
 
 
 @_visible_errors("Setup wizard")
 def _run_setup_wizard_with_smoap(smoap_path: str) -> None:
-    """Module-level subprocess entry: open the wizard, remembering the
-    .smoap path for the post-completion hand-off to SMOClient."""
+    """Module-level entry: open the wizard, then optionally hand off to
+    SMOClient after Kivy shuts down.
+
+    The wizard returns True iff the user clicked "Launch SMOClient" on the
+    Done page. We can only act on that here — AFTER `run_setup_wizard`
+    returns — because doing it from inside the wizard's Kivy app would
+    require either a broken-in-frozen `launch_subprocess` spawn or a
+    nested Kivy `App().run()` (which is unsupported)."""
     from ._setup.wizard import run_setup_wizard
-    run_setup_wizard(smoap_path)
+    if run_setup_wizard(smoap_path):
+        # Recursive call: setup is now complete, so this routes through the
+        # post-setup branch of launch_smo_client and inline-launches
+        # SMOClient with the .smoap-derived CLI args.
+        launch_smo_client(smoap_path)
 
 
 @_visible_errors("Setup wizard")
