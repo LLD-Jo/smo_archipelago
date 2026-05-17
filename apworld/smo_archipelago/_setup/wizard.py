@@ -87,12 +87,20 @@ def save_setup_state(state: dict[str, Any]) -> None:
 # Wizard entry point
 # ---------------------------------------------------------------------------
 
-def run_setup_wizard(smoap_path: str | None = None) -> None:
+def run_setup_wizard(smoap_path: str | None = None) -> bool:
     """Open the Kivy wizard window. Blocks until the user closes it.
 
     `smoap_path` is the .smoap file the user opened (if any) — used to
     pre-fill SMOClient on the "Launch now" button at the end. Pass None
     when the wizard is invoked standalone (e.g. via `/setup`).
+
+    Returns True if the user clicked "Launch SMOClient" on the Done page
+    (so the caller should hand off to SMOClient now that Kivy has shut
+    down) and False otherwise. The caller — not this function — performs
+    the SMOClient launch, because spawning a Kivy app from inside a still-
+    running Kivy `App().run()` recurses into a broken state in frozen
+    PyInstaller builds (multiprocessing.Process child can't read its
+    bundled `kivy/data/style.kv` out of library.zip).
     """
     # Lazy Kivy import — keeps the apworld importable on headless gen hosts.
     from kivy.app import App
@@ -148,6 +156,10 @@ def run_setup_wizard(smoap_path: str | None = None) -> None:
         "deploy_target": load_setup_state().get("deploy_target", "ryujinx"),
         "ryujinx_root": str(detect_ryujinx_path() or ""),
         "sd_root": "",
+        # Set by the Done page's "Launch SMOClient" button before stopping
+        # Kivy. The caller (in __init__.py) reads this after `App().run()`
+        # returns and performs the actual SMOClient launch.
+        "launch_smoclient_after_close": False,
     }
 
     sm = ScreenManager()
@@ -581,14 +593,14 @@ def run_setup_wizard(smoap_path: str | None = None) -> None:
         return s
 
     def launch_smoclient_now() -> None:
-        """Hand off to SMOClient with .smoap-derived args, then close."""
-        from worlds.LauncherComponents import launch_subprocess
-        # Defer to the apworld root's exported helper so subprocess pickling
-        # works (top-level callable, no closure capture).
-        from .. import _run_smo_client_with_args
-        s: SmoapFile = wizard_state["smoap"]
-        args = smoap_to_launch_args(s)
-        launch_subprocess(_run_smo_client_with_args, name="SMOClient", args=tuple(args))
+        """Mark for post-wizard launch, then stop Kivy.
+
+        We can't spawn SMOClient from here because (a) `launch_subprocess`
+        is broken in frozen builds (Kivy bootstrap fails in the child) and
+        (b) running SMOClient inline would try to start a second Kivy App
+        while ours is still alive. The caller in __init__.py performs the
+        handoff after `App().run()` returns and Kivy is fully torn down."""
+        wizard_state["launch_smoclient_after_close"] = True
         App.get_running_app().stop()
 
     # ----------------------- assemble ---------------------------------
@@ -608,3 +620,4 @@ def run_setup_wizard(smoap_path: str | None = None) -> None:
             return sm
 
     SetupApp().run()
+    return bool(wizard_state["launch_smoclient_after_close"])
