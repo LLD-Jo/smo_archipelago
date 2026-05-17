@@ -39,12 +39,18 @@ def test_run_extract_maps_passes_dash_u_to_python(tmp_path) -> None:
         captured["env"] = env
         return build.BuildResult(ok=True, returncode=0, log="")
 
+    # Stub both file lookups: bundled_script (the extractor itself) and
+    # bundled_data_file (the locations.json / items.json the wizard now
+    # threads through as --locations / --items overrides). Both must
+    # exist on disk so the wizard's existence checks pass before spawn.
+    (tmp_path / "extract_shine_map.py").write_text("")
+    (tmp_path / "locations.json").write_text("[]")
+    (tmp_path / "items.json").write_text("[]")
     with patch.object(build, "_stream_subprocess", fake_stream), \
          patch.object(build, "bundled_script",
+                      lambda name: tmp_path / name), \
+         patch.object(build, "bundled_data_file",
                       lambda name: tmp_path / name):
-        # Touch the bundled-script path so the FileNotFoundError check
-        # in bundled_script doesn't fire (we've patched it anyway).
-        (tmp_path / "extract_shine_map.py").write_text("")
         build.run_extract_maps(tmp_path / "fake.nsp")
 
     cmd = captured["cmd"]
@@ -68,10 +74,18 @@ def test_run_extract_maps_sets_pythonunbuffered_env(tmp_path) -> None:
         captured["env"] = env or {}
         return build.BuildResult(ok=True, returncode=0, log="")
 
+    # Stub both file lookups: bundled_script (the extractor itself) and
+    # bundled_data_file (the locations.json / items.json the wizard now
+    # threads through as --locations / --items overrides). Both must
+    # exist on disk so the wizard's existence checks pass before spawn.
+    (tmp_path / "extract_shine_map.py").write_text("")
+    (tmp_path / "locations.json").write_text("[]")
+    (tmp_path / "items.json").write_text("[]")
     with patch.object(build, "_stream_subprocess", fake_stream), \
          patch.object(build, "bundled_script",
+                      lambda name: tmp_path / name), \
+         patch.object(build, "bundled_data_file",
                       lambda name: tmp_path / name):
-        (tmp_path / "extract_shine_map.py").write_text("")
         build.run_extract_maps(tmp_path / "fake.nsp")
 
     env = captured["env"]
@@ -94,10 +108,18 @@ def test_run_extract_maps_preserves_existing_env(monkeypatch, tmp_path) -> None:
         captured["env"] = env or {}
         return build.BuildResult(ok=True, returncode=0, log="")
 
+    # Stub both file lookups: bundled_script (the extractor itself) and
+    # bundled_data_file (the locations.json / items.json the wizard now
+    # threads through as --locations / --items overrides). Both must
+    # exist on disk so the wizard's existence checks pass before spawn.
+    (tmp_path / "extract_shine_map.py").write_text("")
+    (tmp_path / "locations.json").write_text("[]")
+    (tmp_path / "items.json").write_text("[]")
     with patch.object(build, "_stream_subprocess", fake_stream), \
          patch.object(build, "bundled_script",
+                      lambda name: tmp_path / name), \
+         patch.object(build, "bundled_data_file",
                       lambda name: tmp_path / name):
-        (tmp_path / "extract_shine_map.py").write_text("")
         build.run_extract_maps(tmp_path / "fake.nsp")
 
     env = captured["env"]

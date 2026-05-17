@@ -72,7 +72,15 @@ def test_extract_bundled_tree_unpacks_zip_to_appdata(
 ) -> None:
     """On a frozen-Launcher install (.apworld zip in the import path), the
     bundled tree must be unpacked to %APPDATA%/SMOArchipelago/bundled/.
-    Validates the full unpacking machinery against a real zip."""
+    Validates the full unpacking machinery against a real zip.
+
+    Three subtrees are extracted (everything subprocesses access by path):
+      smo/_setup/scripts/   -> <bundled>/scripts/
+      smo/_setup/switch_mod -> <bundled>/switch_mod/
+      smo/data/             -> <bundled>/data/
+    The apworld's Python modules (smo/client/, smo/Items.py, etc.) are
+    NOT extracted because they're imported via zipimport, not invoked
+    as files."""
     # Build a fake smo.apworld with the same layout as the real one.
     fake_zip_path = tmp_path / "smo.apworld"
     with zipfile.ZipFile(fake_zip_path, "w") as zf:
@@ -82,8 +90,10 @@ def test_extract_bundled_tree_unpacks_zip_to_appdata(
         zf.writestr("smo/_setup/scripts/sync_capture_table.py", "# sync")
         zf.writestr("smo/_setup/switch_mod/CMakeLists.txt", "# cmake")
         zf.writestr("smo/_setup/switch_mod/src/main.cpp", "int main() {}")
+        zf.writestr("smo/data/locations.json", '{"locations":[]}')
+        zf.writestr("smo/data/items.json", '{"items":[]}')
         # Files at other prefixes that must NOT be extracted (the apworld
-        # also bundles the world code itself; that lives outside _setup/).
+        # also bundles the world code itself; that's loaded via zipimport).
         zf.writestr("smo/client/main.py", "# client")
         zf.writestr("smo/Items.py", "# items")
 
@@ -100,11 +110,42 @@ def test_extract_bundled_tree_unpacks_zip_to_appdata(
     assert (extracted / "scripts" / "sync_capture_table.py").is_file()
     assert (extracted / "switch_mod" / "CMakeLists.txt").is_file()
     assert (extracted / "switch_mod" / "src" / "main.cpp").is_file()
-    # The non-_setup tree must not have been extracted.
+    # Data dir is extracted too — needed by the extractor's cross-validation.
+    assert (extracted / "data" / "locations.json").is_file()
+    assert (extracted / "data" / "items.json").is_file()
+    assert (extracted / "data" / "locations.json").read_text() == '{"locations":[]}'
+    # The Python-code subtree must NOT be extracted (zipimport handles it).
     assert not (extracted / "client").exists()
     assert not (extracted / "Items.py").exists()
     # Content survives intact.
     assert (extracted / "scripts" / "extract_shine_map.py").read_text() == "print('hi')"
+
+
+def test_bundled_data_file_works_from_zip(tmp_path, monkeypatch) -> None:
+    """End-to-end: `bundled_data_file('locations.json')` must return an
+    on-disk path. Regression test: without data/ extraction, the wizard's
+    extract step crashed with 'apworld locations.json not found at
+    C:\\...\\bundled\\apworld\\smo_archipelago\\data\\locations.json'
+    because REPO_ROOT-relative paths inside the extractor don't apply to
+    the bundled layout."""
+    fake_zip_path = tmp_path / "smo.apworld"
+    with zipfile.ZipFile(fake_zip_path, "w") as zf:
+        zf.writestr("smo/data/locations.json", '{"locations":[]}')
+        zf.writestr("smo/data/items.json", '{"items":[]}')
+
+    fake_appdata = tmp_path / "AppData"
+    fake_appdata.mkdir()
+    monkeypatch.setenv("APPDATA", str(fake_appdata))
+    monkeypatch.setattr(
+        build, "_SETUP_ROOT", fake_zip_path / "smo" / "_setup",
+    )
+
+    p = build.bundled_data_file("locations.json")
+    assert p.is_file()
+    assert "smo.apworld" not in str(p), (
+        f"path still contains 'smo.apworld' as a directory segment: {p}"
+    )
+    assert p.read_text() == '{"locations":[]}'
 
 
 def test_extract_bundled_tree_skips_when_marker_matches(

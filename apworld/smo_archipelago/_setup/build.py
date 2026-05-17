@@ -165,26 +165,38 @@ def _extract_bundled_tree() -> Path:
         shutil.rmtree(dst, ignore_errors=True)
     dst.mkdir(parents=True, exist_ok=True)
 
-    # Inside the apworld zip the layout is `smo/_setup/scripts/...` and
-    # `smo/_setup/switch_mod/...`. Strip the `smo/_setup/` prefix when
-    # writing so the extracted layout matches what `_SETUP_ROOT` would
-    # have pointed at on a dev checkout.
-    prefix = "smo/_setup/"
+    # We extract two subtrees from inside `smo.apworld`:
+    #   smo/_setup/scripts/...  ->  <bundled>/scripts/...
+    #   smo/_setup/switch_mod/... -> <bundled>/switch_mod/...
+    #   smo/data/...            ->  <bundled>/data/...
+    #
+    # The `smo/_setup/` ones are the cross-compile scripts + sources
+    # subprocesses invoke directly. The `smo/data/` ones are items.json
+    # and locations.json, which the extractor reads on disk for
+    # cross-validation against the SMO RomFS dump. (The rest of the
+    # apworld — Python modules, client/, hooks/ — is loaded by zipimport
+    # from inside the .apworld zip and doesn't need extraction.)
+    prefixes = (
+        ("smo/_setup/", ""),     # extract sibling to "scripts/" + "switch_mod/"
+        ("smo/data/", "data/"),  # extract at <bundled>/data/<filename>
+    )
     with zipfile.ZipFile(apworld_zip) as zf:
         for info in zf.infolist():
             name = info.filename
-            if not name.startswith(prefix):
-                continue
-            rel = name[len(prefix):]
-            if not rel:
-                continue  # the prefix entry itself
-            target = dst / rel
-            if info.is_dir() or name.endswith("/"):
-                target.mkdir(parents=True, exist_ok=True)
-                continue
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with zf.open(info) as src_f, open(target, "wb") as dst_f:
-                shutil.copyfileobj(src_f, dst_f)
+            for src_prefix, dst_prefix in prefixes:
+                if not name.startswith(src_prefix):
+                    continue
+                rel = dst_prefix + name[len(src_prefix):]
+                if rel == dst_prefix:  # the prefix entry itself
+                    break
+                target = dst / rel
+                if info.is_dir() or name.endswith("/"):
+                    target.mkdir(parents=True, exist_ok=True)
+                    break
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(info) as src_f, open(target, "wb") as dst_f:
+                    shutil.copyfileobj(src_f, dst_f)
+                break  # name matched this prefix; don't try the next
 
     marker.write_text(str(src_mtime), encoding="utf-8")
     _extracted_bundled_root = dst
@@ -223,6 +235,24 @@ def bundled_script(name: str) -> Path:
         raise FileNotFoundError(
             f"bundled script {name!r} not found at {p}. "
             f"Run `python scripts/install_apworld.py --bundle-scripts` first."
+        )
+    return p
+
+
+def bundled_data_file(name: str) -> Path:
+    """Path to a bundled apworld data file (items.json, locations.json),
+    or raises if absent.
+
+    Same zip-extraction story as bundled_script: the extractor reads
+    these on disk for cross-validation, so we need a real filesystem
+    path, not a zipimport-style path inside the .apworld."""
+    root = _extract_bundled_tree()
+    p = root / "data" / name
+    if not p.exists():
+        raise FileNotFoundError(
+            f"bundled data file {name!r} not found at {p}. "
+            f"This usually means the apworld was built without the data "
+            f"directory — re-run `python scripts/install_apworld.py`."
         )
     return p
 
@@ -321,6 +351,11 @@ def run_extract_maps(
     """
     script = bundled_script("extract_shine_map.py")
     out_dir = data_dir()
+    # Point the extractor at the bundled apworld data files explicitly.
+    # Its REPO_ROOT-relative default (`<__file__>.parent.parent / "apworld"
+    # / "smo_archipelago" / "data" / "locations.json"`) assumes a dev
+    # source checkout layout; the post-zip-extract bundled layout puts
+    # them at <bundled>/data/.
     args = [
         *_python_invoker(), "-u", str(script),
         "--nsp", str(nsp_path),
@@ -328,6 +363,8 @@ def run_extract_maps(
         "--review", str(out_dir / "shine_map_review.json"),
         "--cap-out", str(out_dir / "capture_map.json"),
         "--cap-review", str(out_dir / "capture_map_review.json"),
+        "--locations", str(bundled_data_file("locations.json")),
+        "--items", str(bundled_data_file("items.json")),
     ]
     if keys_path:
         args += ["--keys", str(keys_path)]
