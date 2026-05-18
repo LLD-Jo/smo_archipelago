@@ -205,24 +205,23 @@ def _format_odyssey(ctx: "SMOContext") -> str:
     snap = ctx.state.snapshot()
     caps = snap.get("captures_unlocked") or []
     kingdoms = snap.get("kingdoms_unlocked") or []
-    moons_chk = snap.get("moons_checked_by_kingdom") or {}
     moons_recv = snap.get("moons_received_by_kingdom") or {}
-    pool_totals = ctx.dp.moon_pool_counts_by_kingdom()
+    exit_thresholds = ctx.dp.kingdom_exit_thresholds()
     outstanding = ctx.state.get_outstanding()
 
     parts: list[str] = []
     parts.append("[b]Kingdoms unlocked[/b]")
     parts.append(", ".join(kingdoms) if kingdoms else "[i](none yet)[/i]")
     parts.append("")
-    parts.append("[b]Moons by kingdom[/b]    [i]collected / received / pool — outstanding[/i]")
-    all_k = sorted(set(moons_chk) | set(moons_recv) | set(pool_totals))
+    parts.append("[b]Moons by kingdom[/b]    [i]earned / needed to exit[/i]")
+    all_k = sorted(set(moons_recv) | set(exit_thresholds))
     if all_k:
         for k in all_k:
-            chk = moons_chk.get(k, 0)
             recv = moons_recv.get(k, 0)
-            pool = pool_totals.get(k, 0)
+            need = exit_thresholds.get(k)
             out = outstanding.get(k, 0)
-            parts.append(f"  {k}:    {chk} / {recv} / {pool}    ([b]{out}[/b] unspent)")
+            earned_needed = f"{recv} / {need}" if need is not None else f"{recv}"
+            parts.append(f"  {k}:    {earned_needed}    ([b]{out}[/b] unspent)")
     else:
         parts.append("[i](nothing yet)[/i]")
     parts.append("")
