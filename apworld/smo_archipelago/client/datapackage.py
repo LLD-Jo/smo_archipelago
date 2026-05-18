@@ -30,6 +30,30 @@ _LOC_PREFIX_RE = re.compile(r"^([A-Za-z' ]+):\s*(.+)$")
 # Non-greedy head captures multi-word kingdom names like "Dark Side".
 _ITEM_MOON_KINGDOM_RE = re.compile(r"^(.+?) Kingdom (Power Moon|Multi-Moon)$")
 
+# regions.json `requires` strings contain clauses like `{KingdomMoons(Cascade,5)}`
+# meaning "to enter this region the player needs 5 moon-credits FROM Cascade".
+# That N is therefore Cascade's exit threshold — what the player owes the
+# Odyssey before it can fly to the next kingdom. Apostrophe is allowed to
+# match `Bowser's` (the apostrophe kingdom).
+_KINGDOM_MOONS_RE = re.compile(r"KingdomMoons\(\s*([A-Za-z'][A-Za-z' ]*?)\s*,\s*(\d+)\s*\)")
+
+
+def _parse_kingdom_exit_thresholds(regions_text: str) -> dict[str, int]:
+    """Extract every `KingdomMoons(X, N)` clause from regions.json.
+
+    Returns the max N seen per kingdom (multiple regions can require the
+    same source kingdom — take the strictest). Kingdom names are the short
+    form (`Cascade`, `Bowser's`) matching what `_ITEM_MOON_KINGDOM_RE`
+    parses out of item names, so the gui can key both maps the same way.
+    """
+    thresholds: dict[str, int] = {}
+    for kingdom, n in _KINGDOM_MOONS_RE.findall(regions_text):
+        kingdom = kingdom.strip()
+        n = int(n)
+        if n > thresholds.get(kingdom, 0):
+            thresholds[kingdom] = n
+    return thresholds
+
 
 @dataclass
 class ClassifiedItem:
@@ -84,6 +108,8 @@ class DataPackage:
         # Built from the apworld's items.json / locations.json / categories.json
         self._item_categories: dict[str, list[str]] = {}
         self._location_categories: dict[str, list[str]] = {}
+        # Per-kingdom Odyssey-power threshold parsed from regions.json.
+        self._kingdom_exit_thresholds: dict[str, int] = {}
 
         if apworld_data_dir is not None:
             self._load_apworld(apworld_data_dir)
@@ -93,6 +119,7 @@ class DataPackage:
     def _load_apworld(self, data_dir: Path) -> None:
         items_path = data_dir / "items.json"
         locations_path = data_dir / "locations.json"
+        regions_path = data_dir / "regions.json"
         if items_path.exists():
             for entry in json.loads(items_path.read_text(encoding="utf-8")):
                 name = entry.get("name")
@@ -103,9 +130,12 @@ class DataPackage:
                 name = entry.get("name")
                 if name:
                     self._location_categories[name] = entry.get("category", []) or []
+        if regions_path.exists():
+            self._kingdom_exit_thresholds = _parse_kingdom_exit_thresholds(
+                regions_path.read_text(encoding="utf-8"))
 
     def _load_apworld_from_package(self, package: str) -> None:
-        """Load items.json + locations.json via importlib.resources.
+        """Load items.json + locations.json + regions.json via importlib.resources.
 
         Works for both loose-source (filesystem) and zipped apworld
         installations. The package argument is the import name of the
@@ -130,9 +160,16 @@ class DataPackage:
                 name = entry.get("name")
                 if name:
                     target[name] = entry.get("category", []) or []
+        try:
+            regions_text = data_root.joinpath("regions.json").read_text(encoding="utf-8")
+        except (FileNotFoundError, OSError):
+            log.warning("apworld regions.json missing from package %r", package)
+        else:
+            self._kingdom_exit_thresholds = _parse_kingdom_exit_thresholds(regions_text)
         log.info(
-            "DataPackage loaded from package %r: %d items, %d locations",
+            "DataPackage loaded from package %r: %d items, %d locations, %d exit thresholds",
             package, len(self._item_categories), len(self._location_categories),
+            len(self._kingdom_exit_thresholds),
         )
 
     # ---- Wired up at runtime when the AP server sends DataPackage ----
@@ -170,28 +207,17 @@ class DataPackage:
             return ClassifiedItem(ItemKind.KINGDOM, name, kingdom=self._strip_prefix(name, ("Kingdom: ", "Unlock: ")))
         return ClassifiedItem(ItemKind.OTHER, name)
 
-    def moon_pool_counts_by_kingdom(self) -> dict[str, int]:
-        """Return per-kingdom totals for moon items in the AP pool.
+    def kingdom_exit_thresholds(self) -> dict[str, int]:
+        """Per-kingdom Odyssey-power threshold to leave for the next kingdom.
 
-        Counts every item in `item_id_to_name` whose name matches the
-        `<Kingdom> Kingdom {Power Moon,Multi-Moon}` form, weighting
-        Multi-Moon entries by 3 to reflect the moon-credit grant the
-        Switch applies. Returns {} until AP datapackage lands (Connected).
-
-        Used by the Odyssey tab as the "/ pool" denominator next to the
-        collected/received counters. Recomputed on every refresh — cheap
-        (datapackage is dict-of-int, ~70 entries for SMO) and dodges
-        cache-invalidation when the apworld pool changes between runs.
+        Parsed from the apworld's regions.json `requires` strings — every
+        `{KingdomMoons(X, N)}` clause means "you need N moons FROM X" to
+        enter the region that declares it, which is the same as "X needs N
+        to leave". Ungated kingdoms (Cap, Cloud, Mushroom, Moon, Dark Side,
+        Darker Side) are absent from the dict; the Odyssey tab elides the
+        denominator for them. Empty if regions.json was unreadable.
         """
-        counts: dict[str, int] = {}
-        for name in self.item_id_to_name.values():
-            m = _ITEM_MOON_KINGDOM_RE.match(name)
-            if not m:
-                continue
-            kingdom = m.group(1).strip()
-            weight = 3 if m.group(2) == "Multi-Moon" else 1
-            counts[kingdom] = counts.get(kingdom, 0) + weight
-        return counts
+        return dict(self._kingdom_exit_thresholds)
 
     def classify_location(self, name: str) -> ClassifiedItem:
         # Locations have category tags like "Cap Kingdom", "Cascade Kingdom",

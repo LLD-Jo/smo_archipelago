@@ -82,26 +82,31 @@ def test_split_kingdom_prefix():
     assert sid == "PlainName"
 
 
-def test_moon_pool_counts_by_kingdom_empty_until_ap_lands():
-    """Pre-Connected the AP datapackage hasn't populated item_id_to_name yet,
-    so the count map is empty (Odyssey tab shows the apworld-side checked/
-    received numbers and just elides the / pool denominator)."""
-    dp = DataPackage()  # no apworld data, no AP datapackage
-    assert dp.moon_pool_counts_by_kingdom() == {}
-
-
-def test_moon_pool_counts_by_kingdom_counts_single_and_multi():
-    """Multi-Moon items weight 3 to mirror the Switch's moon-credit grant."""
+def test_kingdom_exit_thresholds_empty_without_regions():
+    """No apworld data means no regions.json — the Odyssey tab elides the
+    `/ needed` denominator entirely in that case."""
     dp = DataPackage()
-    # Simulate the AP server's DataPackage update.
-    dp.item_id_to_name = {
-        1: "Cascade Kingdom Power Moon",
-        2: "Cascade Kingdom Power Moon",
-        3: "Cascade Kingdom Multi-Moon",
-        4: "Cap Kingdom Power Moon",
-        5: "Goomba",  # capture — should be ignored
-        6: "Not a moon at all",  # untyped — should be ignored
-    }
-    counts = dp.moon_pool_counts_by_kingdom()
-    # Cascade: 2 PM (+2) + 1 MM (+3) = 5; Cap: 1 PM (+1) = 1.
-    assert counts == {"Cascade": 5, "Cap": 1}
+    assert dp.kingdom_exit_thresholds() == {}
+
+
+def test_kingdom_exit_thresholds_from_real_apworld(dp: DataPackage):
+    """Spot-check the Odyssey-power thresholds parsed from regions.json.
+
+    These mirror the in-game leave-thresholds and are what the Odyssey tab
+    shows next to the per-kingdom moons-received counter. Ungated kingdoms
+    (Cap, Cloud, Mushroom, Moon, Dark/Darker Side) are absent."""
+    thresholds = dp.kingdom_exit_thresholds()
+    assert thresholds["Cascade"] == 5
+    assert thresholds["Sand"] == 16
+    assert thresholds["Lake"] == 8
+    assert thresholds["Wooded"] == 16
+    assert thresholds["Lost"] == 10
+    assert thresholds["Metro"] == 20
+    assert thresholds["Snow"] == 10
+    assert thresholds["Seaside"] == 10
+    assert thresholds["Luncheon"] == 18
+    assert thresholds["Ruined"] == 3
+    assert thresholds["Bowser's"] == 8
+    # Ungated kingdoms — no `{KingdomMoons(X,N)}` clause references them.
+    for k in ("Cap", "Cloud", "Mushroom", "Moon"):
+        assert k not in thresholds
