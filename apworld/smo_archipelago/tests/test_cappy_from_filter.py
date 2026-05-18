@@ -1,15 +1,10 @@
 """Tests for the ItemMsg.from_ Cappy-suppression filter in SMOContext.
 
 `shouldShowCappyMsg` (switch-mod/src/ui/CappyMessenger.cpp) treats an empty
-`from` field as "do not surface a Cappy bubble." The bridge collapses the
-`from_` field to "" for any non-other-player source so the Switch-side
-filter trips on:
-
-  - self-finds (sender is our own slot),
-  - server-injected items (admin /send, /release, /collect → player == 0),
-  - unattributed items (player is None).
-
-Bubbles should fire only for items whose source is a real *other* player.
+`from` field as "do not surface a Cappy bubble." The bridge collapses
+`from_` to "" only on the gameplay self-find path (AP routed the item we
+just checked back to ourselves). Server-injected items (`/send`, releases,
+collects) and items from other real players still get a bubble.
 
 Run with the bridge venv:
   bridge/.venv/Scripts/python -m pytest \
@@ -124,20 +119,24 @@ async def test_self_find_collapses_to_empty():
 
 
 @pytest.mark.asyncio
-async def test_server_grant_collapses_to_empty():
-    """Admin /send / release / collect arrive with player == 0."""
+async def test_server_grant_keeps_sender_name():
+    """Admin /send / release / collect arrive with player == 0 and should
+    still surface a Cappy bubble — only gameplay self-finds suppress."""
     ctx, sw = _make_ctx(my_slot=1)
     await _drive(ctx, sender_idx=0)
     assert len(sw.items) == 1
-    assert sw.items[0].from_ == ""
+    assert sw.items[0].from_ == "Archipelago"
 
 
 @pytest.mark.asyncio
-async def test_unattributed_sender_collapses_to_empty():
+async def test_unattributed_sender_passes_self_string_through():
+    """`sender_idx is None` is a wire oddity (no `player` field on the
+    NetworkItem) that should not be mistaken for a self-find. `_sender_name`
+    returns "self" for None — bubble fires, the C++ side renders it."""
     ctx, sw = _make_ctx(my_slot=1)
     await _drive(ctx, sender_idx=None)
     assert len(sw.items) == 1
-    assert sw.items[0].from_ == ""
+    assert sw.items[0].from_ == "self"
 
 
 # ---------------------------------------------------------------- state side
@@ -145,11 +144,11 @@ async def test_unattributed_sender_collapses_to_empty():
 
 @pytest.mark.asyncio
 async def test_state_received_item_keeps_real_sender_for_logging():
-    """ItemEvent recorded in BridgeState must keep the real sender name even
-    when ItemMsg.from_ is collapsed — the in-app tracker UI and log lines
-    rely on attribution, only the Cappy bubble suppresses it."""
+    """ItemEvent recorded in BridgeState keeps the real sender name even
+    when ItemMsg.from_ is collapsed for the self-find case — the in-app
+    tracker UI and log lines rely on attribution."""
     ctx, _ = _make_ctx(my_slot=1)
-    await _drive(ctx, sender_idx=0)
+    await _drive(ctx, sender_idx=1)
     evts = list(ctx.state.received_items)
     assert len(evts) == 1
-    assert evts[0].sender == "Archipelago"
+    assert evts[0].sender == "Mario"

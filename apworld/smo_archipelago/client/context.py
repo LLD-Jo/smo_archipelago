@@ -589,19 +589,16 @@ class SMOContext(CommonContext):
                 classification = classification_from_flags(int(flags or 0)).value
                 ref.classification = classification
                 sender_name = self._sender_name(sender_idx)
-                # Cappy speech bubble should surface only items that came
-                # from a real other player's check. Collapse the ItemMsg
-                # `from` field to empty for self-finds (sender == us),
-                # server-injected items (`/send`, releases, collects;
-                # sender_idx == 0), and unattributed items — the
-                # Switch-side filter treats empty `from` as "do not
-                # speak". sender_name keeps its real value so logging
-                # and ItemEvent tracking stay informative.
-                if (
-                    sender_idx is None
-                    or sender_idx == 0
-                    or sender_idx == self.slot
-                ):
+                # Cappy speech bubble suppresses ONLY the gameplay
+                # self-find case (AP looked up the item at the location
+                # we just checked and routed it back to us). Server-
+                # injected items (`/send`, releases, collects;
+                # sender_idx == 0) and items from other real players
+                # still surface a bubble. Switch-side filter treats
+                # empty `from` as "do not speak". sender_name keeps its
+                # real value so logging and ItemEvent tracking stay
+                # informative.
+                if sender_idx is not None and sender_idx == self.slot:
                     cappy_from = ""
                 else:
                     cappy_from = sender_name
