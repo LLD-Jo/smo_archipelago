@@ -36,7 +36,11 @@ import typing
 # the GUI from starting. Same reason Wargroove imports kvui first.
 from kvui import GameManager, UILog
 
+import os.path
+
+from kivy import kivy_data_dir
 from kivy.clock import Clock
+from kivy.core.text import LabelBase
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
@@ -50,6 +54,57 @@ if typing.TYPE_CHECKING:  # pragma: no cover
 # human speed (moon collects, item arrivals, save loads) so 1.5s mirrors
 # the old web tracker's setInterval and keeps Kivy's frame budget free.
 _REFRESH_INTERVAL = 1.5
+
+
+# Vanilla SMO main-story visit order. Used to sort the Odyssey-tab
+# kingdom-moon table so the rows read top-to-bottom in the order the
+# player will traverse them, not alphabetically. Names mirror the
+# short-form used by KingdomMoons() clauses in regions.json — same
+# keyspace as ctx.dp.kingdom_exit_thresholds and the snapshot's
+# moons_received_by_kingdom dict. Unknown kingdoms (a future post-game
+# addition we haven't listed) fall after the canonical entries,
+# alphabetically.
+_KINGDOM_VISIT_ORDER = (
+    "Cap",
+    "Cascade",
+    "Sand",
+    "Lake",
+    "Wooded",
+    "Lost",
+    "Metro",
+    "Snow",
+    "Seaside",
+    "Luncheon",
+    "Ruined",
+    "Bowser's",
+    "Moon",
+    "Mushroom",
+    "Dark",
+    "Darker",
+)
+_KINGDOM_ORDER_INDEX = {k: i for i, k in enumerate(_KINGDOM_VISIT_ORDER)}
+
+
+def _kingdom_sort_key(k: str) -> tuple[int, str]:
+    return (_KINGDOM_ORDER_INDEX.get(k, len(_KINGDOM_VISIT_ORDER)), k)
+
+
+# Register Kivy's bundled monospace font under a short alias so the
+# Odyssey tab can use [font=RobotoMono] markup to line up the per-kingdom
+# moon-count table. We resolve the .ttf via kivy_data_dir directly
+# rather than kivy.resources.resource_find — the font search path is
+# populated by LabelBase.get_system_fonts_dir which only runs the first
+# time a Label is instantiated, so at module-import time resource_find
+# returns None and the alias never gets registered. When the markup
+# tag later tries to resolve "RobotoMono" Kivy falls back to
+# "RobotoMono.ttf" (per its endswith('.ttf') fallback) and raises
+# OSError, killing the UI thread. _MONO_OK gates the [font=...] markup
+# so a custom Kivy build that strips the bundled fonts degrades to
+# the proportional default instead of crashing.
+_MONO_FONT_PATH = os.path.join(kivy_data_dir, "fonts", "RobotoMono-Regular.ttf")
+_MONO_OK = os.path.isfile(_MONO_FONT_PATH)
+if _MONO_OK:
+    LabelBase.register(name="RobotoMono", fn_regular=_MONO_FONT_PATH)
 
 
 class _LiveLabel(Label):
@@ -167,21 +222,29 @@ class SmoManager(GameManager):
         # Width auto-fits the text (texture_size[0] + a small pad) so the
         # pill can't overflow the top bar at narrow window widths — the
         # connect_layout's text input absorbs whatever's left over.
+        # Height + pos_hint mirror the Connect button (kvui sets
+        # server_connect_button.height = server_connect_bar.height and
+        # pos_hint={"center_y": 0.55}) so the pill sits at the same
+        # vertical position as the button instead of taking the full
+        # dp(40) layout height (which made the text float to the very top
+        # of the strip — valign='middle' alone wasn't enough).
+        pill_h = self.server_connect_bar.height
         self._switch_pill = Label(
             text="Off",
             markup=True,
             size_hint_x=None,
             size_hint_y=None,
             width=dp(60),
-            height=self.connect_layout.height,
+            height=pill_h,
             halign="center",
             valign="middle",
             padding=(dp(6), 0),
+            pos_hint={"center_y": 0.55},
             # Bound only on the height axis so valign='middle' centers the
             # texture vertically; width is left None so the texture_size
             # binding below can keep auto-fitting to the natural text width.
             # See _bind_switch_pill_layout for why both axes can't be bound.
-            text_size=(None, self.connect_layout.height),
+            text_size=(None, pill_h),
         )
         _bind_switch_pill_layout(self._switch_pill)
         self.connect_layout.add_widget(self._switch_pill)
@@ -240,13 +303,31 @@ def _format_odyssey(ctx: "SMOContext") -> str:
 
     parts: list[str] = []
     parts.append("[b]Moons by kingdom[/b]    [i]earned / needed to exit[/i]")
-    all_k = sorted(set(moons_recv) | set(exit_thresholds))
+    all_k = sorted(set(moons_recv) | set(exit_thresholds), key=_kingdom_sort_key)
     if all_k:
+        # Render the table in RobotoMono with width-padded columns so the
+        # name colons, earned counts, and exit thresholds line up under
+        # Kivy's proportional default font. Width is computed from the
+        # observed values so adding a longer-named kingdom doesn't break
+        # alignment.
+        name_w = max(len(k) for k in all_k)
+        recv_w = max(len(str(moons_recv.get(k, 0))) for k in all_k)
+        need_w = max(
+            (len(str(exit_thresholds[k])) for k in all_k
+             if exit_thresholds.get(k) is not None),
+            default=1,
+        )
+        rows: list[str] = []
         for k in all_k:
             recv = moons_recv.get(k, 0)
             need = exit_thresholds.get(k)
-            earned_needed = f"{recv} / {need}" if need is not None else f"{recv}"
-            parts.append(f"  {k}:    {earned_needed}")
+            label = f"{k}:".ljust(name_w + 1)
+            if need is not None:
+                rows.append(f"  {label} {recv:>{recv_w}} / {need:>{need_w}}")
+            else:
+                rows.append(f"  {label} {recv:>{recv_w}}")
+        table = "\n".join(rows)
+        parts.append(f"[font=RobotoMono]{table}[/font]" if _MONO_OK else table)
     else:
         parts.append("[i](nothing yet)[/i]")
     parts.append("")
