@@ -54,9 +54,57 @@ Pre-alpha. Tracking against milestones M0-M8 — see [`docs/architecture.md`](do
 | M7 | Capture lock + goal |
 | M8 | Apworld extensions, in-game ImGui, polish |
 
+## First-time setup (typical user flow)
+
+> ⚠️ **Requires SMO 1.0.0** on a modded Switch running **Atmosphere on
+> firmware 21.x or earlier**. SMO 1.1.0+ won't work; downgrade with
+> [Istador/odyssey-downgrade](https://github.com/Istador/odyssey-downgrade).
+> **FW22+ is NOT supported** (homebrew lifecycle changes break our
+> subsdk9 module).
+>
+> **Platform:** Windows only today. Linux/macOS aren't blocked by design,
+> but the setup wizard and several scripts assume `%APPDATA%`,
+> `C:/devkitPro`, and the Windows Python launcher.
+
+The user-facing flow:
+
+1. **Download `smo.apworld`** from the
+   [Releases page](../../releases).
+2. **Drop it into your Archipelago install's `custom_worlds/`** directory.
+3. **Generate a multiworld with an SMO slot.** If you're new to AP:
+   open the Archipelago Launcher → *Generate Template* → find the
+   YAML labeled **Spicy Meatball Overdrive** in your `Players/`
+   directory → set your `name` and any options → click *Generate*.
+   Extract the per-player zip from `output/` — alongside the usual AP
+   files you'll find a `<player>.smoap`.
+4. **Double-click your `.smoap` file.** The Launcher routes it to
+   **SMO Client** (that's how the entry appears in the Launcher's
+   Clients list). On first run, SMO Client opens the setup wizard,
+   which walks you through prereq checks → SMO NSP pick →
+   moon/capture extraction → bridge PC IP → Switch-mod compile →
+   deploy to SD card.
+
+Detailed walkthrough including prerequisites:
+[`docs/first-time-setup.md`](docs/first-time-setup.md).
+
+### Changing AP server or slot after setup
+
+**Doesn't require a rebuild.** Just type `/connect <host>:<port> <slot>`
+in SMOClient's command bar, or double-click a different `.smoap` file.
+See [`docs/changing-servers.md`](docs/changing-servers.md) for the full
+rebuild-vs-no-rebuild matrix.
+
+### Changing bridge PC IP
+
+**Does require a rebuild** (the IP is baked into the Switch module at
+compile time — retail Switch firmware can't read runtime config from SD).
+Type `/setup` in SMOClient to re-run the wizard.
+
 ## Loopback dev setup (no Switch required)
 
-This brings up the full SMOClient ↔ AP loop locally so you can validate AP-side wiring without booting Ryujinx or a Switch. Tested against Archipelago 0.6.7 on Windows 11 + Python 3.13.
+For project contributors. Brings up the full SMOClient ↔ AP loop locally
+so you can validate AP-side wiring without booting Ryujinx or a Switch.
+Tested against Archipelago 0.6.7 on Windows 11 + Python 3.13.
 
 ```pwsh
 # 0. After fresh clone:
@@ -97,40 +145,6 @@ python scripts\switch_smoke_test.py
 $env:SMOAP_LIVE_AP="1"
 .\.venv\Scripts\python -m pytest -v apworld\smo_archipelago\tests\test_ap_loopback.py
 ```
-
-## First-time setup (typical user flow)
-
-> ⚠️ **Requires SMO 1.0.0** on a modded Switch running **Atmosphere on
-> firmware 21.x or earlier**. SMO 1.1.0+ won't work; downgrade with
-> [Istador/odyssey-downgrade](https://github.com/Istador/odyssey-downgrade).
-> **FW22+ is NOT supported** (homebrew lifecycle changes break our
-> subsdk9 module). Ryujinx is supported as an alternative target.
-
-The entire user-facing flow is three steps:
-
-1. **Download `smo.apworld`** from the
-   [Releases page](../../releases).
-2. **Drop it into your Archipelago install's `custom_worlds/`** directory.
-3. **Double-click your `.smoap` file** (generated per-player when the
-   multiworld is created). The setup wizard opens and walks you through:
-   prereq checks → SMO NSP pick → moon/capture extraction → bridge PC IP →
-   Switch-mod compile → deploy to SD card or Ryujinx.
-
-Detailed walkthrough including prerequisites:
-[`docs/first-time-setup.md`](docs/first-time-setup.md).
-
-### Changing AP server or slot after setup
-
-**Doesn't require a rebuild.** Just type `/connect <host>:<port> <slot>`
-in SMOClient's command bar, or double-click a different `.smoap` file.
-See [`docs/changing-servers.md`](docs/changing-servers.md) for the full
-rebuild-vs-no-rebuild matrix.
-
-### Changing bridge PC IP
-
-**Does require a rebuild** (the IP is baked into the Switch module at
-compile time — retail Switch firmware can't read runtime config from SD).
-Type `/setup` in SMOClient to re-run the wizard.
 
 ## Credits
 

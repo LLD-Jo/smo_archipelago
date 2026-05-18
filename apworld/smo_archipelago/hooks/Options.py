@@ -38,7 +38,9 @@ class IncludeCascadePeaceMoons(DefaultOnToggle):
 
 class IncludeSandPeaceMoons(DefaultOnToggle):
     """Turn off to skip Sand Kingdom moons that are only available after the kingdom's story
-    is complete (Tostarena moon-rock state) or are otherwise tedious to track down."""
+    is complete (Tostarena moon-rock state) or are otherwise tedious to track down.
+    Removes ~22 locations. Set together with multiple other 'include_...' toggles set to false,
+    generation may fail."""
     display_name = "Include Sand Kingdom Peace Moons"
 
 class IncludeLakePeaceMoons(DefaultOnToggle):
@@ -63,7 +65,9 @@ class IncludeMetroPeaceMoons(DefaultOnToggle):
 
 class IncludeSnowPeaceMoons(DefaultOnToggle):
     """Turn off to skip Snow Kingdom moons that are only available after the kingdom's story
-    is complete (Shiveria moon-rock state) or are otherwise tedious to track down."""
+    is complete (Shiveria moon-rock state) or are otherwise tedious to track down.
+    Removes ~18 locations. Set together with multiple other 'include_...' toggles set to false,
+    generation may fail."""
     display_name = "Include Snow Kingdom Peace Moons"
 
 class IncludeSeasidePeaceMoons(DefaultOnToggle):
@@ -95,7 +99,9 @@ class IncludeDeepWoodsMoons(DefaultOnToggle):
 class IncludeMinigameMoons(DefaultOnToggle):
     """Turn off to skip RNG / minigame moons across kingdoms: Sand/Metro/Luncheon Kingdom Slots,
     Sand Quiz, Ocean Quiz, Sphynx's Treasure Vault, Beach Volleyball pair, Jump-Rope pair,
-    Roulette Tower pair."""
+    Roulette Tower pair.
+    Removes ~12 locations. Set together with multiple other 'include_...' toggles set to false,
+    generation may fail."""
     display_name = "Include Minigame Moons"
 
 class IncludeHintArtMoons(DefaultOnToggle):
@@ -111,14 +117,18 @@ class IncludeTouristMoons(DefaultOnToggle):
 class IncludeLongCourseMoons(DefaultOnToggle):
     """Turn off to skip long obstacle-course / precision-platforming moons: Lake Jump-Grab-Climb,
     Wooded Flooding Pipeway / Elevator / Flower Road, Sand Strange Neighborhood, Luncheon Spinning
-    Athletics / Fork Flickin', Seaside Narrow Valley / Stretch, Bowser's Dashing Clouds."""
+    Athletics / Fork Flickin', Seaside Narrow Valley / Stretch, Bowser's Dashing Clouds.
+    Removes ~20 locations. Set together with multiple other 'include_...' toggles set to false,
+    generation may fail."""
     display_name = "Include Long Course Moons"
 
 class IncludePrecisionCaptureMoons(DefaultOnToggle):
     """Turn off to skip moons that hinge on tedious precise control of a specific capture:
     Sand Bullet Bill Maze pair, Sand Invisible/Transparent Maze pair, Sand Jaxi Driver / Stunt,
     Metro Sharpshooting Under Siege, Metro RC Car Pro!, Bowser's Jizo cluster, Bowser's Pokio
-    'Poking' cluster."""
+    'Poking' cluster.
+    Removes ~15 locations. Set together with multiple other 'include_...' toggles set to false,
+    generation may fail."""
     display_name = "Include Precision Capture Moons"
 
 class Capturesanity(Toggle):
@@ -128,7 +138,10 @@ class Capturesanity(Toggle):
 
 class IncludePostMetroMoons(DefaultOnToggle):
     """Turning this off will remove every location and item that isn't relevant before Metro Kingdom. Mostly for the Festival goal.
-    This removes roughly 200 locations, depending on your settings."""
+    This removes roughly 200 locations, depending on your settings.
+    WARNING: this is by far the largest single reduction in the moon pool. Combining it with multiple
+    other 'include_...' toggles set to false can drop the location count below what's needed to place
+    all items, and generation will fail with 'not enough locations to place items'."""
     display_name = "Include Post-Metro Moons"
 
 # This is called before any manual options are defined, in case you want to define your own with a clean slate or let Manual define over them
