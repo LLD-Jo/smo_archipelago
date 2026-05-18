@@ -35,7 +35,10 @@ MIN_CMAKE = (3, 24)
 # https://devkitpro.org/wiki/Getting_Started → the Windows-installer page
 # is the canonical entry.
 INSTALL_URLS = {
-    "python312": "https://www.python.org/downloads/release/python-3120/",
+    # #files anchor scrolls past the release-notes prose straight to the
+    # download table. Without it, first-time users land at the top of the
+    # page and reported being confused about what to click.
+    "python312": "https://www.python.org/downloads/release/python-3120/#files",
     "devkitpro": "https://devkitpro.org/wiki/Getting_Started",
     "cmake": "https://cmake.org/download/",
     "ninja": "https://github.com/ninja-build/ninja/releases",

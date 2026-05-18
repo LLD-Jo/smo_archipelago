@@ -222,8 +222,7 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
             "(Nintendo's lifecycle changes broke subsdk9-style mods).\n"
             "  - Atmosphere CFW set up on the above. See "
             "https://nh-server.github.io/switch-guide/ if you're starting "
-            "from scratch.\n"
-            "  - Or Ryujinx as an alternative (same SMO 1.0.0 requirement).\n\n"
+            "from scratch.\n\n"
             "This wizard will:\n"
             "  - Check that you have devkitPro, CMake, Ninja, hactool, "
             "Python 3.12, and your Switch prod.keys.\n"
@@ -313,13 +312,37 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
             if "next_btn" in next_btn_holder:
                 next_btn_holder["next_btn"].disabled = not ok
 
-        def do_check() -> None:
-            state = load_setup_state()
-            hactool_override = Path(state["hactool_path"]) if state.get("hactool_path") else None
-            results = check_all(hactool_override=hactool_override)
-            render(results)
-
         recheck = Button(text="Re-check", size_hint_y=None, height=40)
+        check_in_progress: dict[str, bool] = {"running": False}
+
+        def do_check() -> None:
+            # `check_all` shells out to ~6 detectors (cmake, ninja,
+            # python, devkitpro, hactool, prod.keys) — ~1 second of
+            # frozen UI on the main thread if run inline. Off-load to
+            # a worker so the button visibly changes state and the
+            # Kivy frame loop keeps running.
+            if check_in_progress["running"]:
+                return
+            check_in_progress["running"] = True
+            recheck.disabled = True
+            recheck.text = "Checking..."
+
+            def worker() -> None:
+                state = load_setup_state()
+                hactool_override = (
+                    Path(state["hactool_path"]) if state.get("hactool_path") else None
+                )
+                results = check_all(hactool_override=hactool_override)
+                def finish(_dt):
+                    render(results)
+                    recheck.text = "Re-check"
+                    recheck.disabled = False
+                    check_in_progress["running"] = False
+                from kivy.clock import Clock as _Clock
+                _Clock.schedule_once(finish)
+
+            threading.Thread(target=worker, daemon=True).start()
+
         recheck.bind(on_release=lambda _i: do_check())
         root.add_widget(recheck)
 
@@ -366,18 +389,13 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
         s = Screen(name="extract")
         root = BoxLayout(orientation="vertical", padding=20, spacing=12)
         root.add_widget(_h1("Extract moon + capture maps"))
-        status = _label("Starting extraction...")
-        root.add_widget(status)
-        # Always-visible hint pointing at the parallel file log. The Kivy
-        # text widget can hide output in subtle ways (worker-thread races,
-        # clock-callback drops, multiprocess pipe weirdness); the file log
-        # is the ground-truth backstop.
-        log_hint = _label(
-            "If this looks frozen, tail %APPDATA%\\SMOArchipelago\\extract.log "
-            "to see what the subprocess is actually doing.",
-            height=24,
+        status = _label(
+            "Extracting moon + capture maps from your NSP. This typically "
+            "takes 2-5 minutes the first time (oead venv setup + RomFS "
+            "extract); subsequent runs are faster.",
+            height=64,
         )
-        root.add_widget(log_hint)
+        root.add_widget(status)
         log_lines: list[str] = []
         log_box = TextInput(text="", readonly=True, font_name="RobotoMono-Regular"
                             if False else "Roboto",
@@ -472,7 +490,7 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
             except OSError as e:
                 _state["log_file"] = None
                 on_line(f"[wizard] could not open {extract_log_path}: {e}")
-            status.text = f"Extracting from {nsp.name}..."
+            status.text = f"Extracting from {nsp.name}... (2-5 minutes typical)"
             on_line(f"[wizard] === extract run start: {time.strftime('%Y-%m-%d %H:%M:%S')} ===")
             on_line(f"[wizard] NSP: {nsp}")
             try:
@@ -826,8 +844,22 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
         root = BoxLayout(orientation="vertical", padding=20, spacing=12)
         root.add_widget(_h1("Setup complete"))
 
+        def _success_banner() -> Label:
+            # Bright green, larger-than-h1 confirmation so the user has
+            # an unmistakable "you did it" cue even if the deploy
+            # summary below fails to render. Independent of _h1's
+            # styling so a markup parser failure here doesn't black-out
+            # both lines.
+            return _label(
+                "[size=22][b]Installation successful.[/b][/size]",
+                markup=True,
+                color=(0.2, 0.8, 0.2, 1),
+                height=56,
+            )
+
         def _populate_inner() -> None:
             root.clear_widgets()
+            root.add_widget(_success_banner())
             root.add_widget(_h1("Setup complete"))
             result: DeployResult | None = wizard_state.get("deploy_result")
             if result:
@@ -882,6 +914,7 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
                 wizard_log(f"populate() crashed: {e!r}\n{tb}")
                 # Fallback minimal UI so the user sees text + can close.
                 root.clear_widgets()
+                root.add_widget(_success_banner())
                 root.add_widget(_h1("Setup complete (rendering issue)"))
                 root.add_widget(_label(
                     f"Setup finished but the Done page failed to render: {e}\n\n"
@@ -894,6 +927,7 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
                 root.add_widget(close_btn)
 
         s.bind(on_pre_enter=populate)
+        s.add_widget(root)
         return s
 
     def launch_smoclient_now() -> None:
