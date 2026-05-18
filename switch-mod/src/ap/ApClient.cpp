@@ -204,7 +204,20 @@ void ApClient::stop() {
     // We don't join the thread — the module lives for the process lifetime.
 }
 
+// Time window (ms) after a requestRehello() during which the disconnect /
+// reconnect Cappy bubbles are suppressed. Sized to cover a typical save-load
+// rehello (~100 ms socket cycle + replay) plus headroom; longer than this
+// implies SMOClient genuinely died and the user should see the disconnect.
+static constexpr std::int64_t kRehelloBubbleSuppressMs = 3000;
+
 void ApClient::requestRehello() {
+    // Arm the bubble suppressor BEFORE setting the rehello flag so the worker
+    // thread can't race ahead and call disconnect() between these stores.
+    // The worker only ever READS this value (against nowMs()), so a relaxed
+    // load is fine.
+    suppress_state_bubble_until_ms_.store(
+        ApState::nowMs() + kRehelloBubbleSuppressMs,
+        std::memory_order_relaxed);
     // Set the atomic; the worker reads it on the next loop iteration and
     // closes-and-reopens. We do NOT call disconnect() here because we're on
     // the frame thread and socket close should be owned by the worker.
@@ -387,9 +400,22 @@ void ApClient::disconnect() {
     // graceful path is handled by the ap_state dispatch branch). Reset
     // s_last_ap_state so the next reconnect's ap_state replay fires
     // the "Connected" bubble cleanly.
+    //
+    // Skip the bubble during a save-load-driven re-HELLO: requestRehello()
+    // sets a short suppression window so the user doesn't see scary
+    // "Disconnected from Archipelago" text every time they enter a
+    // kingdom. The corresponding "Connected" suppression lives in the
+    // ap_state dispatch path so both ends of the transition stay quiet.
+    const bool suppress = ApState::nowMs() <
+        suppress_state_bubble_until_ms_.load(std::memory_order_relaxed);
     if (std::strcmp(s_last_ap_state, "ready") == 0) {
-        smoap::ui::CappyMessenger::instance()
-            .enqueueSystem("Disconnected from Archipelago");
+        if (suppress) {
+            SMOAP_LOG_INFO("[bubble] suppressing 'Disconnected from Archipelago' "
+                           "(rehello window)");
+        } else {
+            smoap::ui::CappyMessenger::instance()
+                .enqueueSystem("Disconnected from Archipelago");
+        }
     }
     std::strcpy(s_last_ap_state, "disconnected");
 }
@@ -736,12 +762,28 @@ void ApClient::handleLine(char* line, std::size_t line_len) {
         const bool now_ready = (std::strcmp(m.ap_state.conn, "ready") == 0);
         const bool now_disconnected =
             (std::strcmp(m.ap_state.conn, "disconnected") == 0);
+        // Honor the rehello suppression window — the matching disconnect()
+        // path skips its bubble within the same window, so a save-load round
+        // trip stays silent on both ends. After the window expires, normal
+        // transition bubbles resume (covers SMOClient genuinely dying).
+        const bool bubble_suppressed = ApState::nowMs() <
+            suppress_state_bubble_until_ms_.load(std::memory_order_relaxed);
         if (!was_ready && now_ready) {
-            smoap::ui::CappyMessenger::instance()
-                .enqueueSystem("Connected to Archipelago");
+            if (bubble_suppressed) {
+                SMOAP_LOG_INFO("[bubble] suppressing 'Connected to Archipelago' "
+                               "(rehello window)");
+            } else {
+                smoap::ui::CappyMessenger::instance()
+                    .enqueueSystem("Connected to Archipelago");
+            }
         } else if (was_ready && now_disconnected) {
-            smoap::ui::CappyMessenger::instance()
-                .enqueueSystem("Disconnected from Archipelago");
+            if (bubble_suppressed) {
+                SMOAP_LOG_INFO("[bubble] suppressing 'Disconnected from Archipelago' "
+                               "(rehello window, ap_state path)");
+            } else {
+                smoap::ui::CappyMessenger::instance()
+                    .enqueueSystem("Disconnected from Archipelago");
+            }
         }
         std::size_t i = 0;
         while (i + 1 < sizeof(s_last_ap_state) && m.ap_state.conn[i] != '\0') {

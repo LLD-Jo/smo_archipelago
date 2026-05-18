@@ -87,6 +87,14 @@ private:
     BridgeTarget target_{};
     std::atomic<bool> running_{false};
     std::atomic<bool> rehello_requested_{false};
+    // Time-window suppressor for the "Disconnected/Connected from Archipelago"
+    // Cappy bubbles. Set by requestRehello() to (now + kRehelloBubbleSuppressMs);
+    // disconnect() and the ap_state bubble path skip their enqueue when
+    // monotonic time is still inside the window. Auto-expires so a save-load
+    // that ALSO coincides with SMOClient genuinely dying doesn't permanently
+    // silence the disconnect notification — after the window, normal bubble
+    // behavior resumes.
+    std::atomic<std::int64_t> suppress_state_bubble_until_ms_{0};
     int socket_fd_{-1};
     char read_buf_[kInboundLineCap];
     std::size_t read_buf_len_{0};

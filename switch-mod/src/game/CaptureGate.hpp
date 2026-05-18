@@ -55,6 +55,16 @@ bool grantCapture(const char* cap_name, const char* hack_name);
 // where the cache is populated. Frame-thread only.
 void reconcileCaptureDictionary();
 
+// True iff the player's hack dictionary already contains `hack_name`. Used
+// by the ApState capture arm to suppress the Cappy bubble + skip the
+// grantCapture call on bridge HELLO replays (initializeData fires many
+// times per save-load, each causing a re-HELLO that re-ships every owned
+// capture). Returns false in any degraded state — symbols unresolved or
+// GameDataHolder not cached yet — so we fall through to the existing
+// behavior (enqueue + grant) rather than silently dropping a real grant
+// during early boot. Frame thread only (same constraints as grantCapture).
+bool captureAlreadyInDictionary(const char* hack_name);
+
 // Resolve the addHackDictionary + isExistInHackDictionary symbols once at
 // module init. Wired from main.cpp alongside the existing softInstall calls.
 void installCaptureGrantSymbols();
