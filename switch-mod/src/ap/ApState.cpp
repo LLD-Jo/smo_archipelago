@@ -92,6 +92,13 @@ void ApState::applyOnFrame() {
         const std::uint64_t h = hashCheck(synth);
         (void)h;  // M6 phase A: moon arm no longer dedupes via hash.
 
+        // Per-item bubble suppression — set by an arm when the item is a
+        // bridge HELLO replay of something we already own. Source-of-truth
+        // check is the game's own state (e.g. isExistInHackDictionary for
+        // captures) since SaveLoadHook resets our local bitsets right
+        // before each re-HELLO, so they can't dedup the replay themselves.
+        bool replay_suppress = false;
+
         switch (item.kind) {
             case ItemKind::Moon: {
                 // Per-kingdom counter is driven by OutstandingMsg from the
@@ -120,37 +127,56 @@ void ApState::applyOnFrame() {
             case ItemKind::Capture:
                 if (item.cap[0] != '\0') {
                     const std::uint8_t bit = smoap::game::captureBitFor(item.cap);
-                    if (bit < captures_unlocked.size()) captures_unlocked.set(bit);
-                    SMOAP_LOG_INFO("[m6-capture] cap='%s' bit=%u "
-                                   "hack='%s' from=%s",
-                                   item.cap, bit, item.hack_name, item.from);
                     // M6 phase B: actually write into SMO's hack dictionary
                     // so the capture compendium / gameplay treats it as
                     // owned. Falls back to identity (use cap as hack_name)
                     // when bridge didn't resolve — works for the 1:1 names
                     // like Goomba/Goomba.
                     const char* hack = item.hack_name[0] ? item.hack_name : item.cap;
-                    const bool granted = smoap::game::grantCapture(item.cap, hack);
-                    if (!granted) {
-                        // GameDataHolder not cached yet (or symbols missing).
-                        // Stash the item so the per-frame reconciler tail can
-                        // retry once GDH is available — and the Cappy bubble
-                        // fires at the same time as the actual unlock landing,
-                        // not before. Without this, the user sees "Got Goomba"
-                        // with an empty compendium entry (the bug this fixes).
-                        if (!pending_capture_grant.push(item)) {
-                            SMOAP_LOG_WARN(
-                                "[m6-capture] pending_capture_grant FULL — "
-                                "dropping cap='%s' hack='%s' (Cappy and dict "
-                                "write both lost; raise queue cap if this fires)",
-                                item.cap, hack);
+                    // Probe the game's authoritative state BEFORE setting
+                    // our local bit so we can tell a fresh grant from a
+                    // HELLO-replay of something we already own. Without
+                    // this gate, every initializeData fire (5-20 per save
+                    // load) re-ships the full capture set and enqueues a
+                    // Cappy bubble for each one. Returns false in degraded
+                    // states (symbols unresolved, GDH not cached) — in those
+                    // cases we fall through to the existing defer-on-fail
+                    // path below so a real first-time grant isn't dropped.
+                    const bool already_owned =
+                        smoap::game::captureAlreadyInDictionary(hack);
+                    if (bit < captures_unlocked.size()) captures_unlocked.set(bit);
+                    SMOAP_LOG_INFO("[m6-capture] cap='%s' bit=%u "
+                                   "hack='%s' from=%s%s",
+                                   item.cap, bit, item.hack_name, item.from,
+                                   already_owned ? " (replay; suppressing bubble)" : "");
+                    if (already_owned) {
+                        // Dict entry already present — skip the addHack call
+                        // and suppress the duplicate Cappy below.
+                        replay_suppress = true;
+                    } else {
+                        const bool granted = smoap::game::grantCapture(item.cap, hack);
+                        if (!granted) {
+                            // GameDataHolder not cached yet (or symbols missing,
+                            // or scene not loaded). Stash the item so the
+                            // per-frame reconciler tail can retry once GDH is
+                            // available — and the Cappy bubble fires at the same
+                            // time as the actual unlock landing, not before.
+                            // Without this, the user sees "Got Goomba" with an
+                            // empty compendium entry.
+                            if (!pending_capture_grant.push(item)) {
+                                SMOAP_LOG_WARN(
+                                    "[m6-capture] pending_capture_grant FULL — "
+                                    "dropping cap='%s' hack='%s' (Cappy and dict "
+                                    "write both lost; raise queue cap if this fires)",
+                                    item.cap, hack);
+                            }
+                            // Skip the unconditional Cappy enqueue below — we'll
+                            // fire it from flushPendingCaptureGrants after the
+                            // grant lands.
+                            inbound.popDiscard();
+                            ++drained;
+                            continue;
                         }
-                        // Skip the unconditional Cappy enqueue below — we'll
-                        // fire it from flushPendingCaptureGrants after the
-                        // grant lands.
-                        inbound.popDiscard();
-                        ++drained;
-                        continue;
                     }
                 }
                 break;
@@ -178,7 +204,7 @@ void ApState::applyOnFrame() {
         // drop self-grants, REPL-injected items, bulk replays, and Other
         // kinds. Actual dispatch is per-frame in DrawMainHook -> tryPump.
         smoap::ui::CappyMessenger::instance().enqueue(item, local_slot,
-                                                      suppress_cappy);
+                                                      suppress_cappy || replay_suppress);
 
         // Advance tail AFTER consuming all references into item — popDiscard
         // invalidates item_ptr (its slot can be overwritten by a producer push).

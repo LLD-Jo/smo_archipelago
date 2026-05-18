@@ -132,6 +132,16 @@ void enumerateOwnedCaptures(CaptureEnumerationCallback cb, void* ctx) {
     SMOAP_LOG_INFO("[snapshot] enumerateOwnedCaptures emitted=%d", emitted);
 }
 
+bool captureAlreadyInDictionary(const char* hack_name) {
+    if (!hack_name || !*hack_name) return false;
+    if (!s_isExistInHackDictionary) return false;
+    void* gdh = smoap::ap::ApState::instance().game_data_holder_cache.load(
+        std::memory_order_relaxed);
+    if (!gdh) return false;
+    GameDataHolderAccessor acc{gdh};
+    return s_isExistInHackDictionary(acc, hack_name);
+}
+
 bool grantCapture(const char* cap_name, const char* hack_name) {
     if (!hack_name || !*hack_name) {
         SMOAP_LOG_WARN("[m6-capture] dropped: empty hack_name (cap='%s')",
