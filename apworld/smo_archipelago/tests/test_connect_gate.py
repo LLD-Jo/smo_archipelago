@@ -87,6 +87,12 @@ class _StubSwitch:
     async def push_capturesanity_replay(self) -> None:  # pragma: no cover - unused here
         pass
 
+    def set_deathlink_enabled(self, enabled: bool) -> None:  # pragma: no cover - unused here
+        pass
+
+    async def push_deathlink_helloack(self) -> None:  # pragma: no cover - unused here
+        pass
+
 
 def _make_ctx(switch_connected: bool) -> tuple[SMOContext, BridgeState, _StubSwitch]:
     state = BridgeState()

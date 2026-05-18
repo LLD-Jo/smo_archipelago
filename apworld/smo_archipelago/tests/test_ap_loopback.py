@@ -98,6 +98,15 @@ class _StubSwitch:
     async def push_capturesanity_replay(self) -> None:
         pass
 
+    def set_deathlink_enabled(self, enabled: bool) -> None:
+        # SMOContext._handle_ap_package("Connected", ...) calls this when
+        # slot_data ships death_link. The loopback seed has DeathLink off,
+        # so the value is the same as the default — no-op.
+        pass
+
+    async def push_deathlink_helloack(self) -> None:
+        pass
+
 
 def _free_port() -> int:
     """Pick a free TCP port for the local MultiServer to bind."""

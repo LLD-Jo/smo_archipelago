@@ -62,6 +62,12 @@ class _StubSwitch:
     async def push_capturesanity_replay(self) -> None:  # pragma: no cover - unused here
         pass
 
+    def set_deathlink_enabled(self, enabled: bool) -> None:  # pragma: no cover - unused here
+        pass
+
+    async def push_deathlink_helloack(self) -> None:  # pragma: no cover - unused here
+        pass
+
 
 _ITEM_ID = 4242
 _ITEM_NAME = "Goomba"
