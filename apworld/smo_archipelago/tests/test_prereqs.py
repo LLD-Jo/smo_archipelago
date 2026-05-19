@@ -384,7 +384,12 @@ def test_prod_keys_missing_surfaces_picker(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
     r = check_prod_keys()
     assert not r.ok
-    assert "Lockpick" in r.install_url
+    # No canonical Lockpick_RCM URL — the upstream repo was archived
+    # and active forks are too volatile to hard-code. The detail string
+    # still tells the user what tool to search for; the wizard surfaces a
+    # Browse button instead of a link.
+    assert r.install_url == ""
+    assert "Lockpick" in r.detail
     assert r.picker_label, "missing picker_label — wizard can't render Browse button"
     assert r.picker_filter, "missing picker_filter — file dialog needs an extension filter"
 
