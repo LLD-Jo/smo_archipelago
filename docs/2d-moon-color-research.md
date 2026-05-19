@@ -82,6 +82,41 @@ codepath that our 4 offsets don't cover.
 (A) is more consistent with the lunakit factory layout — same `Shine` ctor,
 no separate init function — but only the binary will tell us for sure.
 
+## Phase 1c finding (2026-05-19) — actual diagnosis is neither A nor B
+
+Disassembling `_ZN5Shine4initERKN2al13ActorInitInfoE` (0x1cd4e8 size 0x12c8
+on 1.0.0) directly answered the question. The 4 BLs to
+`rs::setStageShineAnimFrame` exist exactly where Kgamer77 documented them
+(0x1cdce4 / 0x1cdd3c / 0x1cddcc / 0x1cde24) — there is no 5th branch with
+extra calls (B is wrong). But two of those four sites do **not** pass the
+Shine itself as X0:
+
+| Site | X0 source (resolved by tracing back from the BL) |
+|---|---|
+| 0x1cdce4 | `mov x0, x19`  → Shine* |
+| 0x1cdd3c | `ldr x0, [x19, #744]`  → **child LiveActor** at Shine + 0x2e8 |
+| 0x1cddcc | `mov x0, x19`  → Shine* |
+| 0x1cde24 | `ldr x0, [x19, #744]`  → **child LiveActor** at Shine + 0x2e8 |
+
+The child is allocated inside Shine::init via `operator new(264)` +
+`al::LiveActor::LiveActor(self, name)`, then initialized with the
+"ShineDot" archive when the parent is a 2D Dot variant (or an analogous
+empty/inner archive in the 3D paths). 264 = 0x108 bytes, so reading
+`*(child + 0x290)` for shineId is a buffer over-read **past the end** of
+the child object. The existing hook silently returned `kNoPaletteOverride`
+or a random heap value, falling through to the early-return on either —
+which is exactly the symptom of "2D moons keep their vanilla color."
+
+x19 holds the parent Shine* across the entire function (set at 0x1cd50c
+via `mov x19, x0` in the prologue and never reassigned). The fix is to
+read the shineId off `ctx->X[19]` instead of `ctx->X[0]`, then substitute
+W2 as before. The BL still targets whichever actor SMO chose; only the
+palette lookup needed correcting.
+
+This was diagnosed offline from a 12 MB main.nso + aarch64-none-elf-objdump
+in <30 minutes, no Ryujinx required. The runbook below remains a valid
+Plan B for cases where the binary alone is ambiguous.
+
 ## What to do next — Windows-side runbook
 
 The remote sandbox doesn't have `main.nso` or Ryujinx. The user runs these
