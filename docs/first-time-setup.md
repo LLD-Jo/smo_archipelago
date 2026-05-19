@@ -1,8 +1,9 @@
 # First-time setup
 
 This page describes everything a brand-new SMO Archipelago player needs to
-do once on their machine. After this, joining a multiworld is just
-double-clicking your `.smoap` file.
+do once on their machine. After this, joining a multiworld is the same as
+with any other Archipelago client: open **SMO Client** from the Archipelago
+Launcher and connect to the AP server.
 
 > **Platform:** Windows only today. Linux and macOS aren't blocked by
 > design, but the setup wizard and several scripts assume `%APPDATA%`,
@@ -31,8 +32,10 @@ Before you start, confirm all three:
   other one later)
 
 You only need to run this once per machine. **Changing AP server or slot
-does NOT require re-running setup** — see
-[changing servers](changing-servers.md).
+does NOT require re-running setup** — once setup is done, you can join any
+multiworld by opening SMO Client from the Archipelago Launcher and typing
+its host/port and slot name into the Connect bar. See
+[changing servers](changing-servers.md) for details.
 
 ## Prerequisites
 
@@ -42,7 +45,7 @@ back-and-forth:
 
 | Prerequisite | Used for | How to get it |
 |---|---|---|
-| **Archipelago** | The framework SMOClient runs inside | https://github.com/ArchipelagoMW/Archipelago/releases |
+| **Archipelago** | The framework SMO Client runs inside | https://github.com/ArchipelagoMW/Archipelago/releases |
 | **Python 3.12** | The moon/capture extractor (`oead` has no Python 3.13+ wheel) | https://www.python.org/downloads/release/python-3120/#files |
 | **devkitPro + devkitA64** | Cross-compiler for the Switch module | https://devkitpro.org/wiki/Getting_Started |
 | **CMake 3.24+** | Build orchestrator | https://cmake.org/download/ |
@@ -55,38 +58,27 @@ back-and-forth:
 > ⚠️ **Why so many tools?** SMO Archipelago is "play your own Switch", not
 > "play an emulated ROM". The mod that talks to AP runs inside SMO on the
 > Switch itself, which means it has to be cross-compiled per-user with the
-> bridge PC's LAN IP baked in. Pre-built binaries can't ship because they'd
-> incorporate Nintendo SDK derivations. The wizard automates as much of
-> the build as it can, but the toolchain itself has to live on your
-> machine.
+> LAN IP of your PC (where SMO Client runs) baked in. Pre-built binaries
+> can't ship because they'd incorporate Nintendo SDK derivations. The
+> wizard automates as much of the build as it can, but the toolchain
+> itself has to live on your machine.
 
 ## The flow
+
+Setup is independent of any specific multiworld. Do it once; afterwards you
+can join any SMO Archipelago multiworld by opening SMO Client and connecting
+to it, exactly like every other AP client.
 
 1. **Download `smo.apworld`** from the
    [Releases page](https://github.com/mdietz94/smo_archipelago/releases).
 2. **Drop it into Archipelago's `custom_worlds/`** directory. On Windows the
    path is typically `%LOCALAPPDATA%\Archipelago\custom_worlds\` or
    wherever you installed Archipelago.
-3. **Generate a multiworld with an SMO slot.** If this is your first time
-   using Archipelago at all, the short version:
-   1. Open the Archipelago Launcher and click *Generate Template*. This
-      writes a YAML stub for every installed game into your `Players/`
-      directory; find the one labeled **Spicy Meatball Overdrive**
-      (that's how this apworld registers).
-   2. Edit the YAML to set your `name` and any options you care about
-      (defaults are sensible — see the *Include...* toggles' inline
-      docstrings for the per-toggle impact).
-   3. Click *Generate*. The Launcher produces a per-player zip in
-      `output/`. Extract it; alongside the usual `.archipelago` /
-      `.zip` files you'll find a `<player>.smoap` — that's your
-      personal "join this multiworld as this slot" file.
-   See AP's
-   [Setting up a YAML](https://archipelago.gg/tutorial/Archipelago/setup/en)
-   tutorial for the longer walkthrough.
-4. **Double-click your `.smoap` file.** Archipelago Launcher routes it to
-   **SMO Client** (that's how the entry appears in the Launcher's Clients
-   list). On first run, SMO Client notices you haven't set up yet and
-   opens the setup wizard.
+3. **Open the Archipelago Launcher and click "SMO Client"** in the Clients
+   list. The SMO Client window opens.
+4. **Type `/setup` in the SMO Client command bar.** The setup wizard opens
+   in a fresh window. (On a brand-new install the wizard may also pop on
+   its own when SMO Client detects no prior setup state.)
 5. **Walk the wizard.** Eight pages, in order:
    1. Welcome — read the overview.
    2. Prerequisites — wizard checks the table above; click "Install..." for
@@ -95,12 +87,11 @@ back-and-forth:
    4. Extract maps — wizard runs the extractor (~30s the first time
       because it sets up a Python 3.12 venv with `oead`, then faster on
       re-runs). Outputs land in `%APPDATA%/SMOArchipelago/data/`.
-   5. Bridge PC IP — wizard pre-fills the IP it thinks your Switch should
+   5. PC LAN IP — wizard pre-fills the IP it thinks your Switch should
       use to reach this PC. Confirm or override. This IP is baked into the
       Switch module — changing it later requires re-running setup.
-   6. Build Switch module — wizard runs `sync_capture_table.py` then
-      `cmake -G Ninja -DBRIDGE_HOST=<your ip>` then `cmake --build`.
-      Takes about a minute end to end.
+   6. Build Switch module — wizard configures and runs the cross-compile
+      with your PC's IP baked in. Takes about a minute end to end.
    7. Deploy target — usually **Real Switch (SD card)**:
       - **SD card:** wizard auto-detects mounted drives with an
         `atmosphere/` directory; pick yours or browse to it. Files land
@@ -114,20 +105,27 @@ back-and-forth:
         `%APPDATA%/Ryujinx/mods/contents/...`. (Ryujinx itself is no
         longer publicly distributed; the wizard works with whichever
         copy you already have.)
-   8. Done — click "Launch SMOClient now" to immediately connect to the
-      multiworld using the slot the `.smoap` file specified.
+   8. Done — wizard closes and returns control to SMO Client.
 6. **Boot SMO.** On your Switch (or in Ryujinx, if that's where you
-   deployed) — the mod loads on game start.
-   It dials the bridge PC every couple seconds until SMOClient is listening
-   (port 17777 by default); the SMOClient GUI flips from "waiting for
-   Switch" to "ready" the moment HELLO arrives.
+   deployed) — the mod loads on game start. It dials your PC every
+   couple seconds until SMO Client is listening (port 17777 by default);
+   the SMO Client window flips from "waiting for Switch" to "ready" the
+   moment HELLO arrives.
+7. **Join a multiworld.** Generate or join a seed and connect SMO Client
+   to it the same way you would for any other Archipelago game. The
+   apworld is named **Spicy Meatball Overdrive** in the Launcher's
+   *Generate Template* output. If you're new to Archipelago in general,
+   see AP's
+   [Setting up a YAML](https://archipelago.gg/tutorial/Archipelago/setup/en)
+   tutorial.
 
 ## After setup
 
-Joining additional multiworlds is just **double-click the `.smoap`**. The
-wizard runs only on first launch (and on `/setup` from the SMOClient
-command bar if you want to re-trigger it explicitly). Subsequent launches
-go straight to SMOClient with the slot name pre-filled in the Connect bar.
+Joining additional multiworlds works exactly like every other Archipelago
+client — open SMO Client from the Archipelago Launcher and connect. The
+wizard does not need to run again unless your PC's LAN IP changes or you
+upgrade to a new SMO Archipelago release; run `/setup` from the SMO Client
+command bar in those cases.
 
 ## Troubleshooting
 
@@ -157,28 +155,29 @@ prereq check verifies the cross-compiler binary, not just the env var.
 
 Check the mod log on the SD card / Ryujinx sd folder at
 `atmosphere/contents/0100000000010000/smoap.log`. Most often the cause is
-the bridge PC's firewall blocking inbound port 17777, or the IP baked into
-the mod doesn't match the bridge PC's current IP (LAN reassignment). Use
-`/setup` in SMOClient to re-run the wizard with the new IP.
+your PC's firewall blocking inbound port 17777, or the IP baked into the
+mod doesn't match your PC's current IP (LAN reassignment). Use `/setup`
+in SMO Client to re-run the wizard with the new IP.
 
 ### "Wizard launched but window doesn't show up"
 
-Kivy can be slow to spin up the first time (3-10s on cold start). If
-nothing appears after 30s, check the Archipelago Launcher's log window for
-errors — most likely a missing Kivy dependency (re-run AP's setup) or a
-DPI scaling issue on Windows (try `set KIVY_DPI=96` before launching).
+SMO Client can take a few seconds to spin up on a cold start. If nothing
+appears after 30s, check the Archipelago Launcher's log window for
+errors — most likely a missing dependency (re-run Archipelago's installer).
 
 ## Reset / re-run
 
 If anything goes wrong and you want a clean slate:
 
 ```pwsh
-# Delete all wizard outputs (will trigger setup on next .smoap open):
+# Delete all wizard outputs. Next time you open SMO Client (from the
+# Archipelago Launcher), the wizard will pop on its own; you can also
+# trigger it explicitly with /setup from the command bar.
 Remove-Item -Recurse -Force "$env:APPDATA\SMOArchipelago"
 ```
 
-Or, from inside a running SMOClient, type `/setup` in the command bar —
+Or, from inside a running SMO Client, type `/setup` in the command bar —
 that spawns the wizard in a fresh window without wiping anything; the
 wizard's pages remember what's already been done so you can re-run only
-the steps you actually changed (e.g. only the Bridge-IP and Build pages
+the steps you actually changed (e.g. only the PC-IP and Build pages
 if you just moved to a new LAN).
