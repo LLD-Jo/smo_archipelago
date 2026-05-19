@@ -7,31 +7,19 @@ different costs. Knowing which is which saves time.
 
 | What you want to change | Rebuild required? | How |
 |---|---|---|
-| AP server address (host:port) | **No.** | Open SMO Client from the Archipelago Launcher, type the host/port and slot name into the **Connect** bar at the top of the window, and click **Connect**. A `.smoap` file is **not** needed; if you happen to have one from the organizer, double-clicking it just pre-fills the slot. |
-| AP slot name | **No.** | Same as above: type your slot name into SMO Client's **Connect** bar and click **Connect**. |
-| AP password | **No.** | Type it into the password field next to the **Connect** bar, then click **Connect**. |
+| AP server address (host:port) | **No.** | Connect SMO Client like any other AP client. |
+| AP slot name | **No.** | Same as above. |
+| AP password | **No.** | Same as above. |
 | Switch listen port (PC side) | **No.** | Edit `host.yaml` or pass `--switch-port`. |
 | Your PC's LAN IP | **Yes.** Re-run the setup wizard. | Open SMO Client from the Archipelago Launcher and type `/setup` in the command bar. |
 | Switching to a different PC | **Yes.** Set up on the new PC. | Run the wizard on the new PC. |
 
 ## Per-session: server, slot, password
 
-These all live in SMO Client's runtime configuration — connect to a new
-server / slot / password the same way you do in any other Archipelago
-client. The Switch mod doesn't know or care about them; it only knows
-about your PC's LAN IP, so changing them never requires a rebuild.
-
-### Optional: double-clicking a `.smoap` file
-
-If the multiworld's organizer hands you a `<player>.smoap` file, you can
-double-click it instead of typing the slot name by hand — Archipelago
-Launcher routes it through to SMO Client with the slot name pre-filled.
-If the `.smoap`'s optional host field is also set, the Connect bar is
-pre-populated too; otherwise type it in and click **Connect**.
-
-`.smoap` files are convenience, not a requirement. You can always join a
-multiworld by opening SMO Client from the Archipelago Launcher and typing
-the host/port and slot name into the Connect bar yourself.
+These all live in SMO Client's runtime configuration — connect like any
+other Archipelago client. The Switch mod doesn't know or care about them;
+it only knows about your PC's LAN IP, so changing them never requires a
+rebuild.
 
 ## Per-machine: your PC's LAN IP
 

@@ -111,32 +111,21 @@ to it, exactly like every other AP client.
    couple seconds until SMO Client is listening (port 17777 by default);
    the SMO Client window flips from "waiting for Switch" to "ready" the
    moment HELLO arrives.
-7. **Join a multiworld.** Either:
-   - **You're hosting / running the seed yourself:** click *Generate
-     Template* in the Archipelago Launcher to get a YAML stub for
-     **Spicy Meatball Overdrive** in your `Players/` directory, edit your
-     `name` and options, click *Generate*, and host the resulting
-     `.archipelago` file. Then type the host/port and slot name into
-     SMO Client's **Connect** bar at the top of the window and click
-     **Connect**.
-   - **You're joining someone else's seed:** ask the organizer for the
-     host/port and your slot name, type them into SMO Client's **Connect**
-     bar and click **Connect**. If they sent you a `<player>.smoap` file
-     you can double-click it instead — it just opens SMO Client with the
-     slot name pre-filled.
-
-   See AP's
+7. **Join a multiworld.** Generate or join a seed and connect SMO Client
+   to it the same way you would for any other Archipelago game. The
+   apworld is named **Spicy Meatball Overdrive** in the Launcher's
+   *Generate Template* output. If you're new to Archipelago in general,
+   see AP's
    [Setting up a YAML](https://archipelago.gg/tutorial/Archipelago/setup/en)
-   tutorial if you're new to Archipelago seed generation in general.
+   tutorial.
 
 ## After setup
 
-Joining additional multiworlds is just **open SMO Client from the
-Archipelago Launcher, type the host/port + slot name into the Connect bar
-at the top of the window, and click Connect** — or double-click a `.smoap`
-file if the organizer sent you one. The wizard does not need to run again
-unless your PC's LAN IP changes or you upgrade to a new SMO Archipelago
-release; run `/setup` from the SMO Client command bar in those cases.
+Joining additional multiworlds works exactly like every other Archipelago
+client — open SMO Client from the Archipelago Launcher and connect. The
+wizard does not need to run again unless your PC's LAN IP changes or you
+upgrade to a new SMO Archipelago release; run `/setup` from the SMO Client
+command bar in those cases.
 
 ## Troubleshooting
 

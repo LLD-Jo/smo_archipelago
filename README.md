@@ -33,7 +33,7 @@ See [`docs/first-time-setup.md`](docs/first-time-setup.md) for the full prereq t
 
 Detailed walkthrough: [`docs/first-time-setup.md`](docs/first-time-setup.md).
 
-After setup is done, **you don't need an `.smoap` file to play**. Open SMO Client from the Archipelago Launcher and connect to whichever multiworld you want — different game, different host, different slot, no rebuild required. If the multiworld's organizer did hand you a `<player>.smoap` file, double-clicking it just opens SMO Client with the slot name pre-filled; you can always type it yourself instead.
+After setup, joining additional multiworlds is the same as any other Archipelago client — open SMO Client from the Archipelago Launcher and connect to the AP server. No rebuild required when changing host, slot, password, or apworld version.
 
 ## How the game plays differently from vanilla SMO
 
@@ -125,12 +125,9 @@ Moon -> P3").
 ### Changing AP server or slot after setup
 
 **Doesn't require a rebuild.** Open SMO Client from the Archipelago
-Launcher, type the host/port and your slot name into the **Connect** bar
-at the top of the window, and click **Connect** — or, if the multiworld's
-organizer sent you an `.smoap` file, double-click that to open SMO Client
-with the slot pre-filled. Either path works for any multiworld you join,
-as long as the SMO mod on your Switch matches the SMO Archipelago version
-the seed was generated against.
+Launcher and connect like any other AP client. Works for any multiworld
+you join, as long as the SMO mod on your Switch matches the SMO
+Archipelago version the seed was generated against.
 See [`docs/changing-servers.md`](docs/changing-servers.md) for the full
 rebuild-vs-no-rebuild matrix.
 
