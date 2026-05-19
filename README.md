@@ -93,6 +93,20 @@ A few behaviors only make sense once you know what the mod is doing. The
 short version: **moons and captures aren't yours until AP gives them to
 you**, and the in-game UI is your honest indicator of what AP has sent.
 
+### Goal: collect the Multi Moon awarded for defeating Bowser on the Moon
+
+The win condition is the same as vanilla SMO's main-story ending —
+**defeat Bowser on the Moon Kingdom, complete the spark-pylon escape
+sequence, and collect the "Long Journey's End" Multi Moon** awarded at the
+end of the wedding cutscene. That single moon is the apworld's `victory`
+location ("Defeat Bowser and Escape the Moon"); the moment you collect it
+SMOClient ships an AP `ClientGoal` and your slot is marked complete.
+
+Beating Bowser at the end of *Bowser's Kingdom* (mid-game) does **not**
+count — the wedding cutscene that plays there features Peach in her
+wedding dress but is not the ending. You still have to continue to the
+Moon Kingdom and finish the chase.
+
 ### How do I know it is working?
 
 The earliest in-game signal is **Cappy himself**. Shortly after you
