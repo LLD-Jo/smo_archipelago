@@ -22,7 +22,15 @@ def load_data_file(*args) -> dict:
 
     return filedata
 
-game_table = load_data_file('game.json')
+# Game-level constants. The "game" / "creator" fields are also used as the
+# seed for the per-player AP id allocation in Game.py; keep them stable.
+# scripts/build_poptracker_pack.py mirrors these values — update both.
+game_table: dict = {
+    "game": "SMO",
+    "creator": "archipelago",
+    "filler_item_name": "Coin",
+    "death_link": True,
+}
 item_table = load_data_file('items.json')
 location_table = load_data_file('locations.json')
 region_table = load_data_file('regions.json')

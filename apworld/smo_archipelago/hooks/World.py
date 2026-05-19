@@ -6,9 +6,8 @@ from BaseClasses import MultiWorld, CollectionState
 from ..Items import SMOItem
 from ..Locations import SMOLocation
 
-# Raw JSON data from the apworld, respectively:
-#          data/game.json, data/items.json, data/locations.json, data/regions.json
-#
+# Apworld data: game_table is the inlined dict in Data.py; the rest are loaded
+# from data/items.json, data/locations.json, data/regions.json.
 from ..Data import game_table, item_table, location_table, region_table
 
 # These helper methods allow you to determine if an option has been set, or what its value is, for any player in the multiworld

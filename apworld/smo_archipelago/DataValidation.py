@@ -419,7 +419,7 @@ class DataValidation():
     @staticmethod
     def checkForGameBeingInvalidJSON():
         if len(DataValidation.game_table) == 0:
-            raise ValidationError("No settings were found in your game.json. This likely indicates that your JSON is incorrectly formatted. Use https://jsonlint.com/ to validate your JSON files.")
+            raise ValidationError("No game-level settings were found; the game_table constant in Data.py is empty.")
 
     @staticmethod
     def checkForItemsBeingInvalidJSON():

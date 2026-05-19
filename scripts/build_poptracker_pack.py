@@ -1,7 +1,7 @@
 """Generate the SMO Archipelago PopTracker pack from the apworld data.
 
 Reads:
-  apworld/smo_archipelago/data/{items,locations,regions,categories,game}.json
+  apworld/smo_archipelago/data/{items,locations,regions,categories}.json
   apworld/smo_archipelago/hooks/Options.py    (for option defaults + display names)
   poptracker/pack-src/                        (hand-authored skeleton)
 
@@ -857,11 +857,13 @@ def build(root: Path, version: str, out_dir: Path) -> dict[str, Any]:
     locations = json.loads((data_dir / "locations.json").read_text(encoding="utf-8"))
     regions = json.loads((data_dir / "regions.json").read_text(encoding="utf-8"))
     categories = json.loads((data_dir / "categories.json").read_text(encoding="utf-8"))
-    game = json.loads((data_dir / "game.json").read_text(encoding="utf-8"))
 
-    game_short = game["game"]
-    creator = game.get("creator", "")
-    filler_name = game.get("filler_item_name", "Filler")
+    # Mirrors the inlined `game_table` in apworld/smo_archipelago/Data.py.
+    # Update both if either changes — the AP id allocation in starting_index()
+    # is seeded from these and must agree with the apworld at runtime.
+    game_short = "SMO"
+    creator = "archipelago"
+    filler_name = "Coin"
     start = starting_index(game_short, creator)
     item_ids = allocate_item_ids(items, filler_name, start)
     location_ids = allocate_location_ids(locations, start)

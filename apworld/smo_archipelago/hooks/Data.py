@@ -1,4 +1,4 @@
-# called after the game.json file has been loaded
+# called after the inlined game_table dict has been assembled in Data.py
 def after_load_game_file(game_table: dict) -> dict:
     return game_table
 # called after the items.json file has been loaded, before any item loading or processing has occurred

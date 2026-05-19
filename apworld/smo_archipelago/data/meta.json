@@ -22,15 +22,9 @@
                     "file_name": "setup_en.md",
                     "link": "setup/en",
                     "_authors": ["Fuzzy"],
-                    "_comment": "if you don't include the authors it will use creator from game.json"
+                    "_comment": "if you don't include the authors it will use the creator constant in Data.py"
                 }
-            ],
-            "_options_presets": {
-                "Easy":{
-                    "Option1": true,
-                    "Option2": "potato"
-                }
-            }
+            ]
         }
     },
     "_comment_":"Enable the generation of puml diagram of your apworld region and locations for debug purposes",

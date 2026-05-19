@@ -89,8 +89,9 @@ C:\Users\maxwe\Documents\smo_archipelago\
   .claude/skills/                Project skills (smo-build, smo-loopback-test, ...)
   apworld/smo_archipelago/       The apworld + Python client
     __init__.py                  World class + SMOSettings + "SMO Client" Component reg
-    data/                        categories.json / game.json / items.json /
-                                 locations.json / meta.json / regions.json
+    data/                        categories.json / items.json / locations.json
+                                 / meta.json / regions.json (game-level config
+                                 lives in Data.py, not a JSON file)
     hooks/                       Generation hook surfaces (Rules, Options, World, ...)
     Data.py, Game.py, ...        World boilerplate (item/location/region tables, etc.)
     _setup/                      One-download setup wizard (Kivy) — first-time toolchain +

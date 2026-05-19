@@ -20,7 +20,7 @@ These options become possible once enforcement is real (server-verifiable, not h
 
 - **Progressive kingdom moon-count gating** — bridge enforces "you must have ≥ N moons before entering kingdom K" at AP-rules level rather than self-reported.
 - **Hint system** — pull AP hints into the in-game overlay automatically.
-- **DeathLink** — already declared in `data/game.json` (`death_link: true`); bridge wires it to SMO's death events.
+- **DeathLink** — already declared on the inlined `game_table` in `Data.py` (`death_link: True`); bridge wires it to SMO's death events.
 - **Traps** — low-coin, no-jump, temporary capture-lock.
 - **Goal selection** — Bowser vs Darker Side vs all-moons %.
 
