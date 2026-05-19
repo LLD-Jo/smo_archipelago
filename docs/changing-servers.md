@@ -16,19 +16,12 @@ different costs. Knowing which is which saves time.
 
 ## Per-session: server, slot, password
 
-These all live in SMO Client's runtime configuration. The Switch mod doesn't
-know or care about them — it only knows about your PC's LAN IP. So changing
-any of these is a click-and-type operation, never a rebuild.
+These all live in SMO Client's runtime configuration — connect to a new
+server / slot / password the same way you do in any other Archipelago
+client. The Switch mod doesn't know or care about them; it only knows
+about your PC's LAN IP, so changing them never requires a rebuild.
 
-### From the SMO Client GUI
-
-Type the host/port (e.g. `archipelago.gg:38281`) into the **Connect** bar
-at the top of the SMO Client window, your slot name into the slot field,
-and click **Connect**. To switch hosts mid-session, just clear the field,
-type the new one, and click **Connect** again — SMO Client will disconnect
-from the old server and connect to the new one.
-
-### By double-clicking a `.smoap` file (optional convenience)
+### Optional: double-clicking a `.smoap` file
 
 If the multiworld's organizer hands you a `<player>.smoap` file, you can
 double-click it instead of typing the slot name by hand — Archipelago
@@ -39,13 +32,6 @@ pre-populated too; otherwise type it in and click **Connect**.
 `.smoap` files are convenience, not a requirement. You can always join a
 multiworld by opening SMO Client from the Archipelago Launcher and typing
 the host/port and slot name into the Connect bar yourself.
-
-### Per-session DeathLink toggle
-
-The default is set in `host.yaml` (`smo_options.deathlink_default`). To
-override for a single launch, pass `--deathlink` on the CLI. The Switch
-mod respects whatever SMO Client tells it during the HELLO handshake, so
-flipping the flag mid-session requires a SMO Client restart but no rebuild.
 
 ## Per-machine: your PC's LAN IP
 

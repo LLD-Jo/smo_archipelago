@@ -172,10 +172,9 @@ in SMO Client to re-run the wizard with the new IP.
 
 ### "Wizard launched but window doesn't show up"
 
-Kivy can be slow to spin up the first time (3-10s on cold start). If
-nothing appears after 30s, check the Archipelago Launcher's log window for
-errors — most likely a missing Kivy dependency (re-run AP's setup) or a
-DPI scaling issue on Windows (try `set KIVY_DPI=96` before launching).
+SMO Client can take a few seconds to spin up on a cold start. If nothing
+appears after 30s, check the Archipelago Launcher's log window for
+errors — most likely a missing dependency (re-run Archipelago's installer).
 
 ## Reset / re-run
 

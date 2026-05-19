@@ -7,7 +7,7 @@ Today the SMO Archipelago experience is a *Manual* client ([empathy-mp3/SMO-manu
 - Detects moons / captures / scenario events on Switch and reports them as AP location checks.
 - Receives AP items (moons, captures, kingdoms) and applies them to the live game.
 - Enforces capture locks (cannot possess Frog / Yoshi / T-Rex / etc. until the AP item is received).
-- Surfaces progress through a Kivy tracker tab and an in-game HUD overlay.
+- Surfaces progress through a tracker tab in SMO Client and an in-game HUD overlay.
 
 > ⚠️ **Status: pre-alpha.** Core gameplay loop works end-to-end (Ryujinx and real Switch), but rough edges remain — see [the open issues](../../issues) before joining a serious multiworld.
 
