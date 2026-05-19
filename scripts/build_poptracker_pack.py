@@ -1,7 +1,7 @@
 """Generate the SMO Archipelago PopTracker pack from the apworld data.
 
 Reads:
-  apworld/smo_archipelago/data/{items,locations,regions,categories,game}.json
+  apworld/smo_archipelago/data/{items,locations,regions,categories}.json
   apworld/smo_archipelago/hooks/Options.py    (for option defaults + display names)
   poptracker/pack-src/                        (hand-authored skeleton)
 
@@ -58,13 +58,13 @@ def allocate_item_ids(items: list[dict], filler_name: str, start: int) -> list[t
 
 def allocate_location_ids(locations: list[dict], start: int) -> list[tuple[int, dict]]:
     """Replica of Locations.py: sequential ids starting at start+500.
-    If no victory location is defined, a synthetic "__Manual Game Complete__"
+    If no victory location is defined, a synthetic "__Game Complete__"
     is appended. SMO has explicit victory locations so this branch is unused
     in practice, but matched here for fidelity."""
     out = list(locations)
     has_victory = any(l.get("victory") for l in out)
     if not has_victory:
-        out.append({"name": "__Manual Game Complete__", "region": "Manual", "requires": []})
+        out.append({"name": "__Game Complete__", "region": "SMO", "requires": []})
     return [(start + 500 + i, l) for i, l in enumerate(out)]
 
 
@@ -88,7 +88,7 @@ def section_for(region: str, name: str) -> str:
     return f"@{region}/{name}"
 
 
-# ---------- requires-string parser (Manual mini-language → AST → PopTracker)
+# ---------- requires-string parser (apworld mini-language → AST → PopTracker)
 
 class RequireParseError(Exception):
     pass
@@ -277,7 +277,7 @@ def parse_requires(s: str) -> tuple:
     if isinstance(s, list):
         if not s:
             return ("true",)
-        # Manual allows the requires to be a list of strings joined with AND
+        # The apworld allows the requires to be a list of strings joined with AND
         children = [parse_requires(item) for item in s]
         return children[0] if len(children) == 1 else ("and", children)
     s = s.strip()
@@ -740,7 +740,7 @@ def emit_locations(
     Flat structure: one top-level "location" per kingdom, with each moon
     appearing as a section of that kingdom. The deeper kingdom→child-location
     →section nesting we used initially isn't supported by PopTracker — the
-    DBFZ Manual-framework reference pack uses this flat arc→sections form.
+    DBFZ reference pack uses this flat arc→sections form.
 
     PopTracker JSON shape (per kingdom):
         {
@@ -757,7 +757,7 @@ def emit_locations(
         kingdom = kingdom_for(loc)
         own_dnf = to_dnf(parse_requires(loc.get("requires", "")))
         # AND with region access
-        region = loc.get("region", "Manual")
+        region = loc.get("region", "SMO")
         region_rules = region_prereqs.get(region, [])
         if region_rules:
             region_dnf = [r.split(",") if r else [] for r in region_rules]
@@ -857,11 +857,13 @@ def build(root: Path, version: str, out_dir: Path) -> dict[str, Any]:
     locations = json.loads((data_dir / "locations.json").read_text(encoding="utf-8"))
     regions = json.loads((data_dir / "regions.json").read_text(encoding="utf-8"))
     categories = json.loads((data_dir / "categories.json").read_text(encoding="utf-8"))
-    game = json.loads((data_dir / "game.json").read_text(encoding="utf-8"))
 
-    game_short = game["game"]
-    creator = game.get("creator", "")
-    filler_name = game.get("filler_item_name", "Filler")
+    # Mirrors the inlined `game_table` in apworld/smo_archipelago/Data.py.
+    # Update both if either changes — the AP id allocation in starting_index()
+    # is seeded from these and must agree with the apworld at runtime.
+    game_short = "SMO"
+    creator = "archipelago"
+    filler_name = "Coin"
     start = starting_index(game_short, creator)
     item_ids = allocate_item_ids(items, filler_name, start)
     location_ids = allocate_location_ids(locations, start)

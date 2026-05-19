@@ -1,7 +1,0 @@
-{
-  "$schema": "https://github.com/ManualForArchipelago/Manual/raw/main/schemas/Manual.game.schema.json",
-  "game": "SMO",
-  "creator": "archipelago",
-  "filler_item_name": "Coin",
-  "death_link": true
-}
