@@ -33,7 +33,6 @@ print(f"[extract] script invoked: __file__={__file__!r}", file=sys.stderr, flush
 print(f"[extract] python={sys.executable!r} argv={sys.argv!r}", file=sys.stderr, flush=True)
 
 import argparse
-import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -57,17 +56,30 @@ APWORLD_ITEMS = REPO_ROOT / "apworld" / "smo_archipelago" / "data" / "items.json
 # -------- self-bootstrap: ensure we're in the 3.12 venv with oead ----------
 
 def _bootstrap_and_reexec() -> None:
-    """Create scripts/.extract-venv (Python 3.12 + oead) and re-exec into it.
+    """Create scripts/.extract-venv (Python 3.12 + oead) and re-launch into it.
 
-    Only invoked when `import oead` fails. After re-exec we're inside the venv
-    and the second `import oead` at the top of this file succeeds. Idempotent:
-    if the venv already exists we skip creation and only re-exec.
+    Only invoked when `import oead` fails. After we re-launch the venv's
+    Python via subprocess and exit with its returncode, the parent script
+    is done; the relaunched child's `import oead` at the top of this file
+    succeeds. Idempotent: if the venv already exists we skip creation
+    and only re-launch.
 
     All prints use `flush=True` and pip runs without `--quiet` so the wizard
     that captures our stdout sees real-time progress during the otherwise-
     silent ~30-90s of venv creation + oead install. Without this the wizard's
     log box stays blank until the extraction step proper starts, and users
     reasonably conclude the whole thing has hung.
+
+    Why subprocess.run instead of os.execv: on Windows `os.execv` is NOT a
+    true process replacement — it calls Microsoft's `_wspawnv` which (a)
+    does NOT quote argv entries containing spaces (so a path like
+    `super mario odyssey.nsp` arrives at the relaunched Python as three
+    separate argv tokens and argparse fails) and (b) returns control to
+    the caller, which then exits with code 0 regardless of the child's
+    real exit code (so the wizard sees rc=0 even when the child failed).
+    subprocess.run uses `list2cmdline` which properly quotes, and we
+    forward its returncode via sys.exit so wrapping callers see the real
+    outcome.
     """
     if not VENV_PY.exists():
         print(f"[bootstrap] creating Python 3.12 venv at {VENV_DIR}",
@@ -87,12 +99,12 @@ def _bootstrap_and_reexec() -> None:
             [str(VENV_PY), "-m", "pip", "install", "oead"],
             check=True,
         )
-        print(f"[bootstrap] venv ready; re-executing under {VENV_PY}",
+        print(f"[bootstrap] venv ready; relaunching under {VENV_PY}",
               file=sys.stderr, flush=True)
-    # Re-exec ourselves in the venv. os.execv on Windows replaces the current
-    # process; the next `import oead` will succeed. Preserve `-u` so the
-    # post-execv child stays unbuffered for the wizard's log capture.
-    os.execv(str(VENV_PY), [str(VENV_PY), "-u", __file__] + sys.argv[1:])
+    proc = subprocess.run(
+        [str(VENV_PY), "-u", __file__, *sys.argv[1:]],
+    )
+    sys.exit(proc.returncode)
 
 
 # Eagerly tell the caller we've started — without this the wizard's log box

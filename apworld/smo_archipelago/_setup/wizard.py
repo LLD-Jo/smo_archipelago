@@ -42,6 +42,7 @@ from .build import (
     BuildResult,
     bundled_switch_mod,
     collect_build_outputs,
+    maps_ready,
     run_cmake_build,
     run_cmake_configure,
     run_extract_maps,
@@ -581,12 +582,32 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
                     status, f"Failed: {e}"))
                 _close_log()
                 return
+            # Belt-and-braces: even when the subprocess returns 0, confirm
+            # the two output files actually landed. Earlier wizard releases
+            # hit a Windows `os.execv` bug in the extractor's bootstrap
+            # where the re-launched child failed with a non-zero exit code,
+            # but the parent (the process subprocess.Popen was watching)
+            # had already returned 0 because Windows `_wspawnv` returns
+            # control to the caller. Checking for the output files closes
+            # that gap regardless of how a future regression sneaks in.
+            outputs_present = maps_ready()
+            if result.ok and not outputs_present:
+                on_line(
+                    "[wizard] subprocess returned 0 but shine_map.json / "
+                    "capture_map.json are missing — treating as failure"
+                )
             from kivy.clock import Clock as _Clock
             def finish(_dt):
-                if result.ok:
+                if result.ok and outputs_present:
                     status.text = "Extraction complete."
                     next_btn.disabled = False
                     retry_btn.disabled = True
+                elif result.ok:
+                    status.text = (
+                        "Extraction reported success but output files are "
+                        "missing — see extract.log."
+                    )
+                    retry_btn.disabled = False
                 else:
                     status.text = f"Extraction failed (exit {result.returncode})."
                     retry_btn.disabled = False

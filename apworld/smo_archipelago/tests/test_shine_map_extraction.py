@@ -124,3 +124,43 @@ def test_capture_map_no_duplicate_hack_keys() -> None:
     keys = [e["hack_name"] for e in _capture_entries()]
     dups = {k for k in keys if keys.count(k) > 1}
     assert not dups, f"duplicate hack_name keys: {dups}"
+
+
+# -- bootstrap re-launch must not regress to os.execv (Windows quoting + rc bug) --
+
+
+def test_bootstrap_does_not_use_os_execv() -> None:
+    """`scripts/extract_shine_map.py` must NOT use `os.execv` to re-launch
+    under the venv'd Python on Windows. Two reasons:
+
+      1. `os.execv` on Windows is implemented via Microsoft's `_wspawnv`,
+         which does NOT quote argv entries containing spaces. A path like
+         `C:\\...\\super mario odyssey.nsp` arrives at the relaunched
+         Python as 3 separate argv tokens; argparse then complains about
+         `unrecognized arguments: mario odyssey.nsp`.
+      2. `os.execv` on Windows is NOT a true process replacement — it
+         spawns the new process and the caller exits with code 0
+         immediately. The parent subprocess.Popen sees rc=0 regardless
+         of the child's real exit code, masking failures from any
+         wrapper (such as the setup wizard).
+
+    Use `subprocess.run([...])` + `sys.exit(proc.returncode)` instead —
+    `list2cmdline` quotes args with spaces correctly, and the exit code
+    propagates honestly."""
+    script = Path(__file__).resolve().parent.parent.parent.parent / "scripts" / "extract_shine_map.py"
+    if not script.exists():
+        pytest.skip(f"{script} not present (running from installed apworld)")
+    src = script.read_text(encoding="utf-8")
+    # Strip the comment block that explains WHY we avoid os.execv — that
+    # mention is intentional, not a regression. Anywhere outside a
+    # comment is forbidden.
+    code_only = "\n".join(
+        line for line in src.splitlines()
+        if "os.execv" not in line or line.lstrip().startswith("#")
+    )
+    assert "os.execv" not in code_only, (
+        "scripts/extract_shine_map.py reintroduced os.execv outside a "
+        "comment. Use subprocess.run + sys.exit(returncode) instead — "
+        "see the docstring of _bootstrap_and_reexec for the full "
+        "Windows-specific rationale."
+    )
