@@ -63,11 +63,13 @@ def test_run_extract_maps_passes_dash_u_to_python(tmp_path) -> None:
 
 
 def test_run_extract_maps_sets_pythonunbuffered_env(tmp_path) -> None:
-    """`os.execv` strips command-line flags but inherits env vars, so the
-    bootstrap's post-execv child Python (the one running under the new
-    venv) must rely on PYTHONUNBUFFERED=1 to stay unbuffered. Without
-    this the second half of the extractor's output is invisible even
-    though we passed -u to the first invocation."""
+    """The bootstrap's re-launched child Python (the one running under the
+    new venv) must stay unbuffered. We pass `-u` explicitly when we
+    subprocess.run the venv Python, but PYTHONUNBUFFERED=1 in the env is
+    belt-and-braces — it survives any future refactor that drops the
+    explicit `-u` and matches what the wizard's prior os.execv-based
+    bootstrap required (env vars were the only thing it carried through
+    reliably)."""
     captured: dict = {}
 
     def fake_stream(cmd, *, cwd=None, env=None, on_line=None):
