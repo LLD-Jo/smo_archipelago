@@ -28,6 +28,19 @@ NINJA_BIN = r"C:\Users\maxwe\AppData\Local\Microsoft\WinGet\Packages\Ninja-build
 MINGW_BIN = r"C:\msys64\mingw64\bin"
 
 
+def ensure_hakkun_patched() -> None:
+    """Apply Windows-port patches to the LibHakkun submodule.
+
+    Idempotent — re-running is cheap. The patches must land BEFORE sail
+    builds (patch 1 touches sail's CMakeLists.txt; patch 2 fixes sail's
+    Windows wchar_t bug; patch 3 quotes the host clang path).
+    """
+    patch_script = os.path.join(REPO_ROOT, "scripts", "patch_hakkun.py")
+    result = subprocess.run([sys.executable, patch_script])
+    if result.returncode != 0:
+        sys.exit("[build] patch_hakkun.py failed")
+
+
 def ensure_sail_built() -> None:
     """Sail is a Windows-native host binary built once per machine.
 
@@ -65,6 +78,7 @@ def main() -> int:
     if not os.path.isdir(SWITCH_MOD):
         sys.exit(f"[build] {SWITCH_MOD} does not exist — phase 1 hasn't run yet")
 
+    ensure_hakkun_patched()
     ensure_sail_built()
 
     env = configure_env()
