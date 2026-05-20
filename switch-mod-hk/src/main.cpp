@@ -22,6 +22,8 @@ void installWorldMapSelectHook();
 void installMoonLabelHook();
 void installShineAppearanceHook();
 void installCreditsStartHook();
+void installCappyMessageTextHooks();
+void installCappyMessengerSymbols();
 }  // namespace smoap::hooks
 
 namespace smoap::game {
@@ -71,6 +73,11 @@ extern "C" void hkMain() {
 
     SMOAP_LOG_INFO("installing CreditsStartHook (Strategy B: StaffRollScene::init)");
     smoap::hooks::installCreditsStartHook();
+
+    SMOAP_LOG_INFO("installing CappyMessenger text-lookup trampolines (4)");
+    smoap::hooks::installCappyMessageTextHooks();
+    SMOAP_LOG_INFO("resolving CappyMessenger rs:: function pointers");
+    smoap::hooks::installCappyMessengerSymbols();
 
     SMOAP_LOG_INFO("=== hkMain END ===");
 }
