@@ -47,4 +47,4 @@ _ZN16GameDataFunction35tryChangeNextStageWithWorldWarpHoleE20GameDataHolderWrite
 // scene's init rather than an inline patch at +0x4C54A4). StaffRollScene is
 // the credits-only scene class per OdysseyDecomp; its init is the only no-
 // false-positive "main game cleared" signal.
-_ZN15StaffRollScene4initERKN2al13ActorInitInfoE
+_ZN14StaffRollScene4initERKN2al13ActorInitInfoE

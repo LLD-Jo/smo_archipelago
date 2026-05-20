@@ -38,7 +38,7 @@ HkTrampoline<void, void*, const al::ActorInitInfo*> creditsStartHook =
 void installCreditsStartHook() {
     SMOAP_LOG_INFO("installing CreditsStartHook -> StaffRollScene::init (Strategy B)");
     creditsStartHook.installAtSym<
-        "_ZN15StaffRollScene4initERKN2al13ActorInitInfoE">();
+        "_ZN14StaffRollScene4initERKN2al13ActorInitInfoE">();
 }
 
 }  // namespace smoap::hooks
