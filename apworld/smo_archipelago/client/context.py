@@ -60,6 +60,17 @@ _GOAL_LOC_BY_OPTION: dict[int, str] = {
 }
 
 
+# Kingdoms whose outstanding-to-Switch counts get clamped to 0 under the
+# festival goal — Metro itself plus every kingdom downstream of it in the
+# linear-chain order. Mirrors gui._HIDDEN_KINGDOMS_FESTIVAL (display side).
+# Keep both in sync: bridge clamps the wire-protocol number so the Switch's
+# OutstandingMsg-consuming logic never thinks the player owns moons past
+# Metro, and the UI hides the rows for those same kingdoms.
+_FESTIVAL_ZEROED_KINGDOMS = frozenset({
+    "Metro", "Snow", "Seaside", "Luncheon", "Ruined", "Bowser's", "Moon",
+})
+
+
 class SMOClientCommandProcessor(ClientCommandProcessor):
     """`/`-prefixed commands typed into the Kivy command bar.
 
@@ -465,10 +476,23 @@ class SMOContext(CommonContext):
     # same connection cycle.
 
     def _outstanding_entries_for_switch(self) -> list[OutstandingEntry]:
-        """Snapshot of derived outstanding as wire entries."""
+        """Snapshot of derived outstanding as wire entries.
+
+        Under the festival goal, Metro and every downstream kingdom are
+        clamped to 0 regardless of what the bridge actually received —
+        the player is meant to win inside Metro Kingdom and must not
+        accumulate enough outstanding for the Switch's M7 Path A gate to
+        unlock the Odyssey to Snow. Bridge-side `state.moons_received_by_kingdom`
+        keeps tracking real counts in case the user reconnects to a
+        non-festival seed without restarting the client.
+        """
         outstanding = self.state.compute_outstanding() or {}
+        festival = self.is_festival_goal()
         return [
-            OutstandingEntry(kingdom=k, count=int(v))
+            OutstandingEntry(
+                kingdom=k,
+                count=0 if festival and k in _FESTIVAL_ZEROED_KINGDOMS else int(v),
+            )
             for k, v in sorted(outstanding.items())
         ]
 

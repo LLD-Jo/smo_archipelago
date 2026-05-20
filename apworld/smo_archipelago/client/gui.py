@@ -97,6 +97,10 @@ def _kingdom_sort_key(k: str) -> tuple[int, str]:
 # a display filter (the bridge still tracks moons_received_by_kingdom for
 # these kingdoms in case the player ever re-runs against a non-festival
 # seed without restarting the client).
+#
+# Keep in sync with context._FESTIVAL_ZEROED_KINGDOMS (which clamps the
+# wire-protocol outstanding count to 0 for the same set so the Switch's
+# M7 Path A gate stays closed).
 _HIDDEN_KINGDOMS_FESTIVAL = frozenset({
     "Metro", "Snow", "Seaside", "Luncheon", "Ruined", "Bowser's", "Moon",
 })
