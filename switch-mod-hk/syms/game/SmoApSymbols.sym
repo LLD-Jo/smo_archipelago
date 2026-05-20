@@ -42,3 +42,9 @@ _ZN16GameDataFunction32calcNextLockedWorldIdForWorldMapEPKN2al11LayoutActorEi
 _ZN16GameDataFunction32calcNextLockedWorldIdForWorldMapEPKN2al5SceneEi
 _ZN16GameDataFunction35tryChangeNextStageWithDemoWorldWarpE20GameDataHolderWriterPKc
 _ZN16GameDataFunction35tryChangeNextStageWithWorldWarpHoleE20GameDataHolderWriterPKc
+
+// Hakkun phase 3b — CreditsStartHook Strategy B (trampoline on the credits
+// scene's init rather than an inline patch at +0x4C54A4). StaffRollScene is
+// the credits-only scene class per OdysseyDecomp; its init is the only no-
+// false-positive "main game cleared" signal.
+_ZN15StaffRollScene4initERKN2al13ActorInitInfoE

@@ -21,9 +21,11 @@ void tickPendingUncapture();
 void installWorldMapSelectHook();
 void installMoonLabelHook();
 void installShineAppearanceHook();
+void installCreditsStartHook();
 }  // namespace smoap::hooks
 
 namespace smoap::game {
+void installSnapshotSymbols();
 void installDepositKingdomLookupSymbol();
 void installPayShineSnapshotSymbol();
 void installCaptureGrantSymbols();
@@ -63,6 +65,12 @@ extern "C" void hkMain() {
 
     SMOAP_LOG_INFO("installing ShineAppearanceHook (AP-classification moon color)");
     smoap::hooks::installShineAppearanceHook();
+
+    SMOAP_LOG_INFO("resolving M6-phase-C snapshot enumeration symbols");
+    smoap::game::installSnapshotSymbols();
+
+    SMOAP_LOG_INFO("installing CreditsStartHook (Strategy B: StaffRollScene::init)");
+    smoap::hooks::installCreditsStartHook();
 
     SMOAP_LOG_INFO("=== hkMain END ===");
 }
