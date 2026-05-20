@@ -18,6 +18,9 @@ void installAddPayShineHook();
 void installAddPayShineAllHook();
 void installCaptureStartHook();
 void tickPendingUncapture();
+void installWorldMapSelectHook();
+void installMoonLabelHook();
+void installShineAppearanceHook();
 }  // namespace smoap::hooks
 
 namespace smoap::game {
@@ -51,6 +54,15 @@ extern "C" void hkMain() {
 
     SMOAP_LOG_INFO("installing CaptureStartHook (capture lock + AP check)");
     smoap::hooks::installCaptureStartHook();
+
+    SMOAP_LOG_INFO("installing WorldMapSelectHook (M7 Path A kingdom-order gate)");
+    smoap::hooks::installWorldMapSelectHook();
+
+    SMOAP_LOG_INFO("installing M6-phase-A.5 cutscene label hooks");
+    smoap::hooks::installMoonLabelHook();
+
+    SMOAP_LOG_INFO("installing ShineAppearanceHook (AP-classification moon color)");
+    smoap::hooks::installShineAppearanceHook();
 
     SMOAP_LOG_INFO("=== hkMain END ===");
 }

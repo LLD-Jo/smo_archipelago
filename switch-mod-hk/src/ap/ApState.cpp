@@ -62,6 +62,37 @@ using GetPayShineNumFn = int (*)(GameDataHolderAccessor, int);
 
 }  // namespace
 
+void ApState::setPendingMoonLabel(const char* text, int seq, std::int64_t deadline_ms) {
+    if (seq <= 0) return;  // 0 is the "empty" sentinel
+    std::size_t i = 0;
+    if (text != nullptr) {
+        while (i + 1 < kPendingMoonLabelCap && text[i] != '\0') {
+            pending_moon_label.text[i] = text[i];
+            ++i;
+        }
+    }
+    pending_moon_label.text[i] = '\0';
+    pending_moon_label.deadline_ms = deadline_ms;
+    pending_moon_label.published_seq.store(seq, std::memory_order_release);
+}
+
+bool ApState::tryTakePendingMoonLabel(char (&text_out)[kPendingMoonLabelCap]) {
+    const int seq = pending_moon_label.published_seq.load(std::memory_order_acquire);
+    if (seq == 0) return false;
+    if (seq == label_last_consumed_seq) return false;
+    if (pending_moon_label.deadline_ms != 0 &&
+        nowMs() > pending_moon_label.deadline_ms) {
+        label_last_consumed_seq = seq;
+        return false;
+    }
+    for (std::size_t i = 0; i < kPendingMoonLabelCap; ++i) {
+        text_out[i] = pending_moon_label.text[i];
+    }
+    text_out[kPendingMoonLabelCap - 1] = '\0';
+    label_last_consumed_seq = seq;
+    return true;
+}
+
 bool ApState::buildPaySnapshot(PendingPaySnapshot& out) const {
     void* holder = game_data_holder_cache.load(std::memory_order_relaxed);
     if (!holder || !get_pay_shine_num_fn) return false;
