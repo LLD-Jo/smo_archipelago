@@ -22,6 +22,7 @@
 #include <new>
 
 #include "hk/os/Thread.h"
+#include "hk/services/sm.h"
 #include "hk/services/socket/address.h"
 #include "hk/services/socket/config.h"
 #include "hk/services/socket/poll.h"
@@ -247,19 +248,43 @@ void ApClient::initNetworking() {
     const bool net_up = nn::nifm::IsNetworkAvailable();
     SMOAP_LOG_INFO("[frame] network available: %s", net_up ? "YES" : "NO");
 
+    // Bring up our own sm: connection FIRST. Hakkun's HK_SINGLETON pattern
+    // does NOT lazy-init — `sm::ServiceManager::instance()` returns an
+    // uninitialized pointer until `initialize()` runs, and the first
+    // getServiceHandle null-derefs (verified 2026-05-20 in Ryujinx — crash at
+    // PC subsdk+0x25ba0 with bsd:u name in X[8]). Spike Gate 2 didn't catch
+    // this because it only took the function address, never actually called
+    // Socket::initialize. Each Switch process can hold multiple sm: sessions,
+    // so opening our own alongside SMO's is fine.
+    SMOAP_LOG_INFO("[frame] hk::sm::ServiceManager::initialize");
+    auto sm_init = hk::sm::ServiceManager::initialize();
+    if (!sm_init.hasValue()) {
+        SMOAP_LOG_ERROR("[frame] sm::ServiceManager::initialize FAILED "
+                        "rc=0x%x — ApClient cannot connect",
+                        static_cast<unsigned>(hk::Result(sm_init).getValue()));
+        return;
+    }
+    SMOAP_LOG_INFO("[frame] sm::ServiceManager::registerClient");
+    if (const auto rc = hk::sm::ServiceManager::instance()->registerClient();
+        rc.failed()) {
+        SMOAP_LOG_ERROR("[frame] sm::registerClient FAILED rc=0x%x — "
+                        "ApClient cannot connect",
+                        static_cast<unsigned>(rc.getValue()));
+        return;
+    }
+
     // Bring up Hakkun's hk::socket::Socket client against bsd:u. SMO has its
     // own nn::socket::Initialize already in flight by the time GameSystem::init
-    // returns; the spike Gate 2 build confirmed that a parallel hk::socket
-    // client coexists with SMO's because sm:: hands each new request an
-    // independent service handle + per-client transfer memory. If a conflict
-    // surfaces in the future, replace-hook nn::socket::Initialize to no-op
-    // (lunakit's pattern, called out in HAKKUN.md open question 1).
+    // returns. Opening a parallel hk::socket client is safe because sm:: hands
+    // each new request an independent bsd:u handle + we supply our own
+    // per-client transfer memory pool.
     hk::socket::ServiceConfig cfg{};
     auto vor = hk::socket::Socket::initialize<"bsd:u">(
         cfg, hk::Span<u8>(g_socket_buffer, kSocketBufferSize));
     if (!vor.hasValue()) {
-        SMOAP_LOG_ERROR("[frame] hk::socket::Socket::initialize FAILED — "
-                        "ApClient will not be able to connect");
+        SMOAP_LOG_ERROR("[frame] hk::socket::Socket::initialize FAILED "
+                        "rc=0x%x — ApClient cannot connect",
+                        static_cast<unsigned>(hk::Result(vor).getValue()));
         return;
     }
     SMOAP_LOG_INFO("[frame] hk::socket ready (parallel client to SMO's)");
