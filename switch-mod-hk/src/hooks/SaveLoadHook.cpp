@@ -25,11 +25,9 @@ std::atomic<std::int64_t>  g_last_fire_ms{0};
 std::atomic<std::int64_t>  g_last_side_effect_ms{0};
 constexpr std::int64_t kSaveLoadDebounceMs = 500;
 
-// BISECT phase 10: phase 9 (bare .orig) was stable -> lambda body code is
-// the trigger. Restore PRE-.orig() code only; leave POST-.orig() out.
-// Survives -> post-orig code is the culprit (state resets, requestRehello,
-// CappyMessenger access). Crashes -> pre-orig code (atomics on file
-// statics, ApState::instance() accessor, SMOAP_LOG_INFO buffer).
+// BISECT phase 11: phase 10 (pre-orig only) was stable -> post-orig is the
+// trigger. Restore state resets + drain + save_was_loaded; leave the two
+// ApClient::instance() calls at the end OUT.
 HkTrampoline<void, GameDataFile*> saveLoadHook =
     hk::hook::trampoline([](GameDataFile* self) -> void {
         const std::uint64_t fire_n =
@@ -48,6 +46,38 @@ HkTrampoline<void, GameDataFile*> saveLoadHook =
         st.save_load_passthrough.store(true, std::memory_order_release);
         saveLoadHook.orig(self);
         st.save_load_passthrough.store(false, std::memory_order_release);
+
+        const std::int64_t prev_side_effect =
+            g_last_side_effect_ms.load(std::memory_order_relaxed);
+        if (prev_side_effect != 0 && (now_ms - prev_side_effect) < kSaveLoadDebounceMs) {
+            SMOAP_LOG_INFO("[saveload-diag] fire#%llu debounced "
+                           "(last side-effect %lldms ago, window=%lldms)",
+                           static_cast<unsigned long long>(fire_n),
+                           static_cast<long long>(now_ms - prev_side_effect),
+                           static_cast<long long>(kSaveLoadDebounceMs));
+            return;
+        }
+        g_last_side_effect_ms.store(now_ms, std::memory_order_relaxed);
+
+        SMOAP_LOG_INFO("SaveLoadHook: clearing session state + requesting re-HELLO");
+        st.locations_checked.reset();
+        st.captures_unlocked.reset();
+        st.goal_sent = false;
+        st.death_pending_send.store(false, std::memory_order_release);
+        smoap::ui::CappyMessenger::instance().clearDispatchLatch();
+        std::size_t drained = 0;
+        while (st.pending_capture_grant.peekRef() != nullptr) {
+            st.pending_capture_grant.popDiscard();
+            ++drained;
+        }
+        if (drained > 0) {
+            SMOAP_LOG_INFO("SaveLoadHook: dropped %zu pending capture grant(s)",
+                           drained);
+        }
+        st.save_was_loaded.store(true, std::memory_order_release);
+        // BISECT phase 11: ApClient calls OFF.
+        // smoap::ap::ApClient::instance().requestRehello();
+        // smoap::ap::ApClient::instance().deferSaveLoadStatusBubble();
     });
 
 }  // namespace
