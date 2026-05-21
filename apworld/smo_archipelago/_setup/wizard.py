@@ -121,7 +121,7 @@ def wizard_log(line: str) -> None:
 # Cap how many times a single wizard page can re-run its worker before
 # we stop offering the Retry button. Picked so a flaky network or AV
 # scan can retry a handful of times without manual intervention, but a
-# persistently broken step (wrong NSP version, missing devkitPro, etc.)
+# persistently broken step (wrong NSP version, missing toolchain, etc.)
 # eventually surfaces a clear "give up — fix the underlying cause"
 # message instead of letting the user click Retry forever. Counts reset
 # on a fresh page entry, so navigating Back→Forward gives a clean slate.
@@ -348,42 +348,96 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
         m = Label(text=msg, halign="left", valign="top", text_size=(600, None))
         m.bind(size=lambda inst, val: setattr(inst, "text_size", (val[0], None)))
         root.add_widget(m)
-        nav, _, next_btn = _nav_row(None, lambda: goto("prereqs"), next_text="Begin")
+        nav, _, next_btn = _nav_row(None, lambda: goto("prereq_mode"), next_text="Begin")
         root.add_widget(nav)
         s.add_widget(root)
         return s
 
-    # --- 2. Prereqs
+    # --- 2a. Prereq install-mode picker (auto vs manual).
+    # Split out of the prereq results screen 2026-05-21 so the choice has
+    # room to breathe (large radio rows + descriptions of what each mode
+    # actually does) and the results screen stays a clean status grid.
+    def build_prereq_mode() -> Screen:
+        s = Screen(name="prereq_mode")
+        root = BoxLayout(orientation="vertical", padding=20, spacing=16)
+        root.add_widget(_h1("How should we install missing prerequisites?"))
+        root.add_widget(_label(
+            "SMOClient needs LLVM 19, mingw64 g++, CMake, Ninja, hactool, "
+            "Python 3.12, sail Python deps, and your Switch prod.keys to "
+            "build the Switch module. Pick how missing pieces should be "
+            "handled — you can switch on the next page if you change your "
+            "mind.",
+            height=80,
+        ))
+
+        persisted = saved_state.get("prereq_mode", "auto")
+
+        def _mode_row(value: str, title: str, desc: str) -> tuple[BoxLayout, CheckBox]:
+            row = BoxLayout(orientation="horizontal", size_hint_y=None,
+                            height=96, spacing=12, padding=(8, 8))
+            cb = CheckBox(group="prereq_mode_pick",
+                          active=(persisted == value),
+                          size_hint_x=None, width=40)
+            row.add_widget(cb)
+            text = Label(
+                text=f"[b][size=18]{title}[/size][/b]\n{desc}",
+                markup=True,
+                halign="left", valign="middle",
+            )
+            text.bind(size=lambda inst, val: setattr(inst, "text_size", val))
+            row.add_widget(text)
+            return row, cb
+
+        auto_row, auto_cb_local = _mode_row(
+            "auto",
+            "Install them for me (recommended)",
+            "Auto-downloads LLVM 19.1.7 and WinLibs g++ to %LOCALAPPDATA%, "
+            "winget-installs CMake / Ninja / Python 3.12, and pip-installs "
+            "the sail deps. You'll still browse to your prod.keys and "
+            "hactool by hand.",
+        )
+        root.add_widget(auto_row)
+
+        manual_row, manual_cb_local = _mode_row(
+            "manual",
+            "I'll install them myself",
+            "Surfaces install links + Browse buttons for each missing tool. "
+            "Use this if you already have an LLVM or msys2 install you want "
+            "to point at.",
+        )
+        root.add_widget(manual_row)
+
+        # Spacer pushes nav to the bottom of the screen.
+        root.add_widget(Widget())
+
+        def _persist_mode(_inst, _val) -> None:
+            new_mode = "auto" if auto_cb_local.active else "manual"
+            state = load_setup_state()
+            if state.get("prereq_mode") == new_mode:
+                return
+            state["prereq_mode"] = new_mode
+            save_setup_state(state)
+        auto_cb_local.bind(active=_persist_mode)
+        manual_cb_local.bind(active=_persist_mode)
+
+        nav, _, next_btn = _nav_row(lambda: goto("welcome"),
+                                    lambda: goto("prereqs"))
+        root.add_widget(nav)
+        s.add_widget(root)
+        return s
+
+    # --- 2b. Prereqs
     def build_prereqs() -> Screen:
         s = Screen(name="prereqs")
         root = BoxLayout(orientation="vertical", padding=20, spacing=12)
         root.add_widget(_h1("Prerequisites"))
 
-        # Mode toggle: "auto" silently installs missing prereqs via winget
-        # / direct installer; "manual" surfaces today's install-page links
-        # and Browse buttons. Both modes share the underlying detector +
-        # winget-path probing, so a manual-mode user who runs `winget
-        # install` in a separate terminal still has Re-check turn rows
-        # green without restarting the wizard. Default to auto; persist
-        # the choice across wizard restarts.
+        # Mode (auto vs manual) is picked on the prereq_mode screen and
+        # persisted to setup_state.json. We re-read it on every screen
+        # entry so a Back → toggle → Forward navigation surfaces the new
+        # mode immediately.
         persisted_mode = saved_state.get("prereq_mode", "auto")
         mode_state: dict[str, str] = {"mode": persisted_mode}
-        mode_row = BoxLayout(orientation="horizontal", size_hint_y=None,
-                             height=40, spacing=8)
-        auto_cb = CheckBox(group="prereq_mode",
-                           active=(persisted_mode == "auto"),
-                           size_hint_x=None, width=30)
-        mode_row.add_widget(auto_cb)
-        mode_row.add_widget(_label(
-            "Install them for me (recommended)",
-            size_hint_x=None, width=300,
-        ))
-        manual_cb = CheckBox(group="prereq_mode",
-                             active=(persisted_mode == "manual"),
-                             size_hint_x=None, width=30)
-        mode_row.add_widget(manual_cb)
-        mode_row.add_widget(_label("I'll install them myself"))
-        root.add_widget(mode_row)
 
         rows_box = BoxLayout(orientation="vertical", spacing=4, size_hint_y=None)
         rows_box.bind(minimum_height=rows_box.setter("height"))
@@ -441,6 +495,16 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
             popup.open()
 
             log_lines: list[str] = []
+            # File mirror so installer output survives the popup being
+            # dismissed. Previously the full transcript only lived in the
+            # Kivy widget and was lost on close, leaving wizard.log with
+            # just the "Install all missing: [...]" breadcrumb.
+            install_log_path = appdata_root() / "install.log"
+            install_log_file = None
+            try:
+                install_log_file = open(install_log_path, "w", encoding="utf-8")
+            except OSError as e:
+                wizard_log(f"could not open install.log: {e}")
 
             def append_log(line: str) -> None:
                 log_lines.append(line)
@@ -449,10 +513,21 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
                 log_widget.text = "\n".join(log_lines[-400:])
 
             def on_line(line: str) -> None:
+                # Synchronous file write on the worker thread so the
+                # line is durable even if the wizard dies mid-install.
+                if install_log_file is not None:
+                    try:
+                        import time
+                        install_log_file.write(
+                            f"[{time.strftime('%H:%M:%S')}] {line}\n"
+                        )
+                        install_log_file.flush()
+                    except Exception:
+                        pass
                 from kivy.clock import Clock as _Clock
                 _Clock.schedule_once(lambda dt: append_log(line))
 
-            def worker() -> None:
+            def _worker_body() -> None:
                 # Lazy-import installers — pulls in urllib + ctypes + the
                 # GitHub-API JSON parser, none of which the apworld layer
                 # should drag onto a headless gen host.
@@ -522,6 +597,19 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
                     # rows that DID succeed still need their green flip.
                     do_check()
                 _Clock.schedule_once(finish)
+
+            def worker() -> None:
+                # try/finally so the install.log file gets closed on
+                # every exit path — preflight aborts, normal completion,
+                # AND any uncaught exception inside _worker_body.
+                try:
+                    _worker_body()
+                finally:
+                    if install_log_file is not None:
+                        try:
+                            install_log_file.close()
+                        except Exception:
+                            pass
 
             threading.Thread(target=worker, daemon=True).start()
 
@@ -611,52 +699,80 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
                 f"Download: {_fmt_gib(dl)} | On-disk: {_fmt_gib(up)}{free_part}"
             )
 
+        # Fixed column widths so every row lines up vertically — even
+        # rows that skip the Browse / action button keep their slot.
+        STATUS_W = 50
+        NAME_W = 180
+        BTN_W = 120
+        ROW_PAD = 8  # padding around the detail label
+
         def render(results: list[PrereqResult]) -> None:
             render_state["last_results"] = results
             rows_box.clear_widgets()
             current_mode = mode_state["mode"]
             for r in results:
-                row = BoxLayout(orientation="horizontal", size_hint_y=None, height=36, spacing=8)
+                row = BoxLayout(orientation="horizontal", size_hint_y=None,
+                                height=44, spacing=8)
                 mark = "[color=00aa00][b]OK[/b][/color]" if r.ok else "[color=cc0000][b]X[/b][/color]"
-                row.add_widget(Label(text=mark, markup=True, size_hint_x=0.1))
-                row.add_widget(Label(text=r.name, size_hint_x=0.25, halign="left", text_size=(150, None)))
-                row.add_widget(Label(text=r.detail[:80], size_hint_x=0.45, halign="left", text_size=(320, None)))
+                row.add_widget(Label(text=mark, markup=True,
+                                     size_hint_x=None, width=STATUS_W,
+                                     halign="center", valign="middle"))
+                name_lbl = Label(text=r.name, halign="left", valign="middle",
+                                 size_hint_x=None, width=NAME_W)
+                name_lbl.bind(size=lambda inst, val: setattr(inst, "text_size", val))
+                row.add_widget(name_lbl)
+
+                # Detail label takes the remaining horizontal space. We
+                # bind its size so wrapping resizes the row to fit — a
+                # short detail keeps the row compact, a long one expands
+                # so nothing is clipped.
+                detail_lbl = Label(text=r.detail, halign="left", valign="middle")
+                def _resize_detail(inst, val, _row=row):
+                    inst.text_size = (max(val[0] - ROW_PAD, 1), None)
+                    new_h = max(inst.texture_size[1] + 16, 44)
+                    if _row.height != new_h:
+                        _row.height = new_h
+                detail_lbl.bind(size=_resize_detail)
+                row.add_widget(detail_lbl)
+
                 if not r.ok and r.picker_label:
-                    pick = Button(text="Browse...", size_hint_x=0.1)
+                    pick = Button(text="Browse...",
+                                  size_hint_x=None, width=BTN_W)
                     pick.bind(on_release=lambda _i, res=r: open_picker_for(res))
                     row.add_widget(pick)
                 else:
-                    row.add_widget(Label(text="", size_hint_x=0.1))
+                    row.add_widget(Widget(size_hint_x=None, width=BTN_W))
                 # Mode-dependent action button: Auto-install in auto mode
                 # (when the detector is auto-installable), Install link in
                 # manual mode or as a fallback when no auto-install path
                 # exists. The Browse button above is mode-independent —
                 # users can still drop a hand-installed binary into place.
-                if not r.ok:
-                    if current_mode == "auto" and r.auto_installable:
-                        auto_btn = Button(text="Auto-install", size_hint_x=0.1)
-                        auto_btn.bind(
-                            on_release=lambda _i, key=r.key: run_installer_popup(
-                                [key], preflight=False,
-                            ),
-                        )
-                        row.add_widget(auto_btn)
-                    elif r.install_url:
-                        link = Button(text="Install...", size_hint_x=0.1)
-                        link.bind(on_release=lambda _i, url=r.install_url: webbrowser.open(url))
-                        row.add_widget(link)
-                    else:
-                        row.add_widget(Label(text="", size_hint_x=0.1))
+                if not r.ok and current_mode == "auto" and r.auto_installable:
+                    auto_btn = Button(text="Auto-install",
+                                      size_hint_x=None, width=BTN_W)
+                    auto_btn.bind(
+                        on_release=lambda _i, key=r.key: run_installer_popup(
+                            [key], preflight=False,
+                        ),
+                    )
+                    row.add_widget(auto_btn)
+                elif not r.ok and r.install_url:
+                    link = Button(text="Install...",
+                                  size_hint_x=None, width=BTN_W)
+                    link.bind(on_release=lambda _i, url=r.install_url: webbrowser.open(url))
+                    row.add_widget(link)
                 else:
-                    row.add_widget(Label(text="", size_hint_x=0.1))
+                    row.add_widget(Widget(size_hint_x=None, width=BTN_W))
                 rows_box.add_widget(row)
                 # When a detector provides multi-line install guidance
                 # (currently just Ninja's winget hint + restart reminder),
-                # surface it as a sub-row below the main row. Auto-size
-                # the height to the wrapped text so the message can't be
-                # silently clipped — the restart reminder is the whole
-                # point of the note.
+                # surface it as a sub-row below the main row. Indent under
+                # the detail column so it visually attaches to its row.
                 if not r.ok and r.note:
+                    note_row = BoxLayout(orientation="horizontal",
+                                         size_hint_y=None, spacing=8)
+                    note_row.add_widget(Widget(
+                        size_hint_x=None, width=STATUS_W + NAME_W + 8))
                     note_lbl = Label(
                         text=r.note,
                         size_hint_y=None,
@@ -664,11 +780,16 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
                         valign="top",
                         color=(0.85, 0.7, 0.2, 1),
                     )
-                    def _resize_note(inst, val, _lbl=note_lbl):
-                        _lbl.text_size = (val[0], None)
-                        _lbl.height = _lbl.texture_size[1] + 8
+                    def _resize_note(inst, val, _lbl=note_lbl, _row=note_row):
+                        _lbl.text_size = (max(val[0] - ROW_PAD, 1), None)
+                        h = _lbl.texture_size[1] + 8
+                        _lbl.height = h
+                        _row.height = h
                     note_lbl.bind(size=_resize_note)
-                    rows_box.add_widget(note_lbl)
+                    note_row.add_widget(note_lbl)
+                    note_row.add_widget(Widget(
+                        size_hint_x=None, width=BTN_W * 2 + 8))
+                    rows_box.add_widget(note_row)
             ok = all_ok(results)
             if "next_btn" in next_btn_holder:
                 next_btn_holder["next_btn"].disabled = not ok
@@ -680,8 +801,8 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
         check_in_progress: dict[str, bool] = {"running": False}
 
         def do_check() -> None:
-            # `check_all` shells out to ~6 detectors (cmake, ninja,
-            # python, devkitpro, hactool, prod.keys) — ~1 second of
+            # `check_all` shells out to ~8 detectors (llvm19, winlibs,
+            # sail-python, cmake, ninja, python, hactool, prod.keys) — ~1 second of
             # frozen UI on the main thread if run inline. Off-load to
             # a worker so the button visibly changes state and the
             # Kivy frame loop keeps running.
@@ -788,29 +909,27 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
         recheck.bind(on_release=lambda _i: do_check())
         root.add_widget(recheck)
 
-        def on_mode_change(_inst, _val) -> None:
-            new_mode = "auto" if auto_cb.active else "manual"
-            if new_mode == mode_state["mode"]:
-                return
-            mode_state["mode"] = new_mode
-            state = load_setup_state()
-            state["prereq_mode"] = new_mode
-            save_setup_state(state)
-            install_all_btn.disabled = (new_mode != "auto")
-            # Re-render without re-running detectors so button swap is
-            # instant. The cached results are still authoritative because
-            # a mode change doesn't affect detection.
-            render(render_state.get("last_results", []))
-        auto_cb.bind(active=on_mode_change)
-        manual_cb.bind(active=on_mode_change)
-
-        nav, _, next_btn = _nav_row(lambda: goto("welcome"), lambda: goto("nsp"))
+        nav, _, next_btn = _nav_row(lambda: goto("prereq_mode"),
+                                    lambda: goto("nsp"))
         next_btn.disabled = True
         next_btn_holder["next_btn"] = next_btn
         root.add_widget(nav)
         s.add_widget(root)
-        # Run the initial check when the page is first shown.
-        s.bind(on_pre_enter=lambda _i: do_check())
+
+        def _on_enter(_inst) -> None:
+            # Re-read mode from setup_state — the user may have toggled it
+            # on the prereq_mode screen and come back via Next. Re-render
+            # any cached results so the button swap is instant, then kick
+            # off a fresh detector run.
+            state = load_setup_state()
+            new_mode = state.get("prereq_mode", "auto")
+            mode_state["mode"] = new_mode
+            install_all_btn.disabled = (new_mode != "auto")
+            cached = render_state.get("last_results", [])
+            if cached:
+                render(cached)
+            do_check()
+        s.bind(on_pre_enter=_on_enter)
         return s
 
     # --- 3. NSP/XCI picker
@@ -1050,7 +1169,6 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
                 )
                 on_line(f"[wizard] hactool override: {hactool_override}")
                 on_line(f"[wizard] prod.keys override: {prod_keys_override}")
-                on_line(f"[wizard] DEVKITPRO env: {os.environ.get('DEVKITPRO', '<unset>')}")
                 on_line(f"[wizard] PATH (first 200 chars): {os.environ.get('PATH', '')[:200]}")
                 # Start the heartbeat *after* we've laid down the header so
                 # the first few lines aren't drowned out by "no output" pings.
@@ -1262,6 +1380,24 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
         root.add_widget(nav)
         s.add_widget(root)
 
+        # File-log mirror so the build screen's output survives the
+        # popup-style Kivy widget being cleared (each retry calls
+        # log_lines.clear() and resets log_box.text). When the user
+        # reports "the build failed", build.log has the full subprocess
+        # transcript across every attempt of this wizard run.
+        build_log_path = appdata_root() / "build.log"
+        build_log_state: dict[str, Any] = {"file": None}
+
+        def _build_log_to_file(line: str) -> None:
+            f = build_log_state["file"]
+            if f is not None:
+                try:
+                    import time
+                    f.write(f"[{time.strftime('%H:%M:%S')}] {line}\n")
+                    f.flush()
+                except Exception:
+                    pass
+
         def append_line(line: str) -> None:
             log_lines.append(line)
             if len(log_lines) > 2000:
@@ -1269,6 +1405,11 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
             log_box.text = "\n".join(log_lines[-400:])
 
         def on_line(line: str) -> None:
+            # Synchronous file write happens on the worker thread so the
+            # line is durable even if the wizard process dies before the
+            # next Kivy frame. The widget update is scheduled on the UI
+            # thread.
+            _build_log_to_file(line)
             from kivy.clock import Clock as _Clock
             _Clock.schedule_once(lambda dt: append_line(line))
 
@@ -1337,8 +1478,8 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
             _Clock.schedule_once(lambda dt: setattr(next_btn, "disabled", False))
 
         # Bounded-retry counter for the build page. Same rationale as the
-        # extract page: a wedged cmake/ninja config issue (wrong devkitPro
-        # version, missing toolchain, etc.) won't fix itself by retrying,
+        # extract page: a wedged cmake/ninja config issue (wrong LLVM /
+        # WinLibs version, missing toolchain, etc.) won't fix itself by retrying,
         # so eventually we surface a "diagnose and re-open setup" message
         # instead of letting the user click Retry forever.
         build_state: dict[str, Any] = {"attempt_count": 0}
@@ -1347,16 +1488,31 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
             if build_state["attempt_count"] >= MAX_STEP_ATTEMPTS:
                 msg = (
                     f"Build failed {build_state['attempt_count']} times "
-                    f"in a row. Common causes: wrong devkitPro version, "
-                    f"missing Ninja in PATH, corrupt switch_mod sources. "
-                    f"Re-run the Re-check prereqs step, then re-open the "
-                    f"wizard."
+                    f"in a row. Common causes: wrong LLVM 19 / WinLibs "
+                    f"version, missing Ninja in PATH, corrupt switch_mod "
+                    f"sources. Re-run the Re-check prereqs step, then "
+                    f"re-open the wizard."
                 )
                 update_status(msg)
                 on_line(f"[wizard] {msg}")
                 retry_btn.disabled = True
                 return
             build_state["attempt_count"] += 1
+            # Open build.log fresh on the first attempt of a page entry,
+            # append on retries so the full diagnostic trail across
+            # attempts stays in one file. Best-effort — a failure to
+            # open just means no file persistence, the widget still works.
+            if build_log_state["file"] is None:
+                mode = "w" if build_state["attempt_count"] == 1 else "a"
+                try:
+                    build_log_state["file"] = open(
+                        build_log_path, mode, encoding="utf-8",
+                    )
+                except OSError as e:
+                    on_line(
+                        f"[wizard] could not open {build_log_path}: {e} "
+                        f"(build will run; output will not be persisted)"
+                    )
             on_line(
                 f"[wizard] === build attempt "
                 f"{build_state['attempt_count']}/{MAX_STEP_ATTEMPTS} ==="
@@ -1369,6 +1525,15 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
 
         def _reset_and_start(*_):
             build_state["attempt_count"] = 0
+            # Close any handle left over from a previous page entry so
+            # the next start_worker re-opens in truncate mode.
+            f = build_log_state["file"]
+            if f is not None:
+                try:
+                    f.close()
+                except Exception:
+                    pass
+                build_log_state["file"] = None
             start_worker()
 
         retry_btn.bind(on_release=lambda _i: start_worker())
@@ -1673,6 +1838,7 @@ def run_setup_wizard(smoap_path: str | None = None) -> bool:
     # ----------------------- assemble ---------------------------------
 
     sm.add_widget(build_welcome())
+    sm.add_widget(build_prereq_mode())
     sm.add_widget(build_prereqs())
     sm.add_widget(build_nsp())
     sm.add_widget(build_extract())
