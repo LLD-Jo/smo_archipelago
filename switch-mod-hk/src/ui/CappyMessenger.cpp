@@ -130,9 +130,12 @@ void CappyMessenger::tryPump(const void* scene) {
     }
 
     if (live_count_ == 0) return;
-    if (!scene) return;            // boot scene / transition — try next frame
-    if (!s_tryShow) return;        // host test build, or symbol resolve failed
-    if (!s_isActive) return;
+    // BISECT phase 18: 3 null checks commented out. If still crashes, the
+    // settle-gate comparison itself is the trigger. If stable, one of these
+    // reads is mistranslated.
+    // if (!scene) return;
+    // if (!s_tryShow) return;
+    // if (!s_isActive) return;
 
     // Settle gate: don't poke the CapMessage director until the scene has
     // been stable for kSceneSettleFrames consecutive frames. New StageScene
