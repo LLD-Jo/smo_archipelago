@@ -136,15 +136,25 @@ def _find_seed_file() -> Path:
         [sys.executable, str(REPO / "scripts" / "install_apworld.py")],
         check=True,
     )
-    subprocess.run(
-        [
-            sys.executable,
-            str(REPO / "scripts" / "ap_generate.py"),
-            "--player_files_path", str(SEEDS_DIR),
-            "--outputpath", str(SEEDS_OUT),
-        ],
-        check=True,
-    )
+    # Generate.py takes a directory and loads every .yaml in it. SEEDS_DIR
+    # carries multiple fixture YAMLs (smo_loopback.yaml, smo_talkatoo.yaml,
+    # ...) all with name "Mario" — pointing Generate.py at the shared dir
+    # produces "Names have to be unique" because the other fixtures are
+    # siblings. Stage just smo_loopback.yaml into a per-test tempdir so
+    # Generate.py sees exactly the one slot the loopback exercises.
+    import tempfile
+    import shutil
+    with tempfile.TemporaryDirectory(prefix="smo_loopback_seed_") as td:
+        shutil.copy2(SEEDS_DIR / "smo_loopback.yaml", Path(td) / "Mario.yaml")
+        subprocess.run(
+            [
+                sys.executable,
+                str(REPO / "scripts" / "ap_generate.py"),
+                "--player_files_path", td,
+                "--outputpath", str(SEEDS_OUT),
+            ],
+            check=True,
+        )
     import zipfile
     for z in SEEDS_OUT.glob("AP_*.zip"):
         with zipfile.ZipFile(z) as zf:
