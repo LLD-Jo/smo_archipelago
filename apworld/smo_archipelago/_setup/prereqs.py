@@ -212,6 +212,46 @@ def _prepend_path(dir_path: Path) -> None:
     os.environ["PATH"] = s + os.pathsep + cur if cur else s
 
 
+def _ensure_python3_shim(python_exe: Path) -> None:
+    """Create a `python3.exe` copy of `python_exe` in the same directory.
+
+    Standard Windows CPython installers ship `python.exe` + `pythonw.exe`
+    but NOT `python3.exe`. Several upstream LibHakkun cmake calls shell
+    out to bare `python3` (toolchain.cmake's setup_libcxx_prepackaged
+    fallback, sail.cmake's setup_sail fallback). With nothing called
+    `python3.exe` on PATH, those resolve to the Microsoft Store stub at
+    `%LOCALAPPDATA%/Microsoft/WindowsApps/python3.exe`, which exits
+    silently — cmake captures the result var but never checks it, and
+    the build dies later with cryptic "no such file" errors.
+
+    `build_switchmod.py` defends each specific call by pre-running the
+    script with `sys.executable`, but a future upstream Hakkun PR could
+    add a new `python3` shell-out we don't know about. The shim is
+    defense-in-depth: even if a new call sneaks past our pre-runs, it
+    resolves to the same vendored 3.12 the wizard pip-installed lz4 into
+    (because `build_switchmod.py` already prepends the dir to PATH).
+
+    Copy, not symlink: Windows symlink creation requires either admin
+    elevation or Developer Mode. A copy is ~30 MiB extra disk but works
+    for every user without prompts.
+
+    Idempotent: skips if `python3.exe` already exists.
+    """
+    if not python_exe.is_file():
+        return
+    shim = python_exe.with_name("python3.exe")
+    if shim.is_file():
+        return
+    import shutil
+    try:
+        shutil.copy2(python_exe, shim)
+    except OSError:
+        # Best-effort. If the copy fails (read-only target dir, etc.),
+        # build_switchmod.py's explicit pre-runs still cover the known
+        # cmake call sites. The shim is belt-and-braces, not load-bearing.
+        pass
+
+
 def check_python312() -> PrereqResult:
     """Python 3.12 launcher availability.
 
@@ -240,6 +280,12 @@ def check_python312() -> PrereqResult:
         rc, out, err = r
         if rc == 0:
             _prepend_path(Path(cmd[0]).parent)
+            # Self-heal the python3.exe shim. Only meaningful when cmd[0]
+            # is python.exe itself (not py.exe — those live in different
+            # dirs under winget's layout).
+            exe = Path(cmd[0])
+            if exe.name.lower() == "python.exe":
+                _ensure_python3_shim(exe)
             ver = (out + err).strip()
             return PrereqResult("python312", "Python 3.12", True,
                                 f"{ver} ({cmd[0]})",

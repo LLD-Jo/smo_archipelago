@@ -111,11 +111,39 @@ def _bootstrap_and_reexec() -> None:
     if not VENV_PY.exists():
         print(f"[bootstrap] creating Python 3.12 venv at {VENV_DIR}",
               file=sys.stderr, flush=True)
-        try:
-            subprocess.run(["py", "-3.12", "-m", "venv", str(VENV_DIR)], check=True)
-        except (FileNotFoundError, subprocess.CalledProcessError) as e:
+        # Try the running interpreter first if it's already 3.12 (the
+        # common wizard path — the wizard invokes us via `py -3.12 -u
+        # extract_shine_map.py`, so sys.executable IS python.exe of 3.12).
+        # Fall through to `py -3.12`, `python3.12`, and the winget-
+        # deterministic vendored path for direct CLI invocations where
+        # the user's PATH may be missing entries.
+        candidates: list[list[str]] = []
+        if sys.version_info[:2] == (3, 12):
+            candidates.append([sys.executable])
+        candidates.append(["py", "-3.12"])
+        candidates.append(["python3.12"])
+        localapp = os.environ.get("LOCALAPPDATA")
+        if localapp:
+            vendored = (Path(localapp) / "Programs" / "Python"
+                        / "Python312" / "python.exe")
+            if vendored.is_file():
+                candidates.append([str(vendored)])
+        last_err: Exception | None = None
+        for cand in candidates:
+            try:
+                subprocess.run(
+                    [*cand, "-m", "venv", str(VENV_DIR)], check=True,
+                )
+                last_err = None
+                break
+            except (FileNotFoundError, subprocess.CalledProcessError) as e:
+                last_err = e
+                continue
+        if last_err is not None:
             sys.exit(
-                f"ERROR: Python 3.12 not available via `py -3.12` ({e}).\n"
+                f"ERROR: Python 3.12 not available. Tried: "
+                f"{', '.join(' '.join(c) for c in candidates)} "
+                f"(last error: {last_err}).\n"
                 f"Install:  winget install -e --id Python.Python.3.12"
             )
         print(f"[bootstrap] installing oead in {VENV_DIR} (one-time, ~30-60s)",
