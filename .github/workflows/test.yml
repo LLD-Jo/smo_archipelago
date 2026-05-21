@@ -173,3 +173,48 @@ jobs:
             switch-mod/tests/test_shine_lookup.cpp \
             -Iswitch-mod/src -o test_shine_lookup
           ./test_shine_lookup
+
+  hakkun-bare-shellouts:
+    # Guard against the next LibHakkun upstream pull adding a new bare-name
+    # `execute_process(COMMAND python3 ...)` (or python/curl/wget/bash/sh)
+    # that we haven't defended in scripts/build_switchmod.py. On Windows
+    # bare `python3` resolves to the Microsoft Store stub by default
+    # (silent no-op), `python` resolves to whatever 3.x is first on PATH
+    # (lz4 misses), `curl` is fine in System32 but the same pattern.
+    # cmake captures the result var but never checks it, so these failures
+    # surface much later as cryptic link errors.
+    #
+    # Each known occurrence MUST be pre-defended by an ensure_*() in
+    # scripts/build_switchmod.py BEFORE the count below is bumped. See
+    # PR #164 for the pattern (toolchain.cmake's libstd download +
+    # sail.cmake's setup_sail).
+    name: Hakkun bare-name shell-out guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          submodules: false
+
+      - name: Initialize LibHakkun submodule (shallow)
+        run: git submodule update --init --depth 1 switch-mod/sys
+
+      - name: Count bare-name execute_process invocations
+        run: |
+          # Defended occurrences in scripts/build_switchmod.py:
+          #   sail.cmake:18         -> ensure_sail_built()
+          #   toolchain.cmake:111   -> ensure_libstd_downloaded()
+          EXPECTED=2
+          ACTUAL=$(grep -rnE 'execute_process[[:space:]]*\(COMMAND[[:space:]]+(python3|python|curl|wget|bash|sh)\b' switch-mod/sys/cmake/ | wc -l)
+          if [ "$ACTUAL" -ne "$EXPECTED" ]; then
+            echo "::error::Bare-name cmake execute_process count changed: expected $EXPECTED, found $ACTUAL"
+            echo "Hits:"
+            grep -rnE 'execute_process[[:space:]]*\(COMMAND[[:space:]]+(python3|python|curl|wget|bash|sh)\b' switch-mod/sys/cmake/ || true
+            echo ""
+            echo "Each occurrence MUST be pre-defended by ensure_*() in"
+            echo "scripts/build_switchmod.py BEFORE bumping EXPECTED in this"
+            echo "workflow. On Windows these resolve to the wrong interpreter"
+            echo "(python3 -> Store stub; python -> wrong 3.x). See PR #164."
+            exit 1
+          fi
+          echo "OK: $ACTUAL bare-name execute_process invocations, all defended."

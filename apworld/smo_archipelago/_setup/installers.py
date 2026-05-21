@@ -459,6 +459,17 @@ def install_python312(on_line: ProgressFn | None = None) -> InstallResult:
         _prepend_path(Path(cmds[0][0]).parent)
         if on_line:
             on_line(f"[install] prepended {Path(cmds[0][0]).parent} to PATH")
+        # Create the python3.exe shim alongside python.exe (defense in
+        # depth — see _ensure_python3_shim docstring). _winget_python312_commands
+        # returns py.exe first then python.exe; find the python.exe form.
+        from .prereqs import _ensure_python3_shim
+        for cmd in cmds:
+            exe = Path(cmd[0])
+            if exe.name.lower() == "python.exe":
+                _ensure_python3_shim(exe)
+                if on_line:
+                    on_line(f"[install] python3.exe shim ready at {exe.with_name('python3.exe')}")
+                break
         return InstallResult(ok=True, returncode=0, log=r.log,
                              detail=cmds[0][0])
     msg = (
