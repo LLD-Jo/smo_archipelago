@@ -142,9 +142,9 @@ std::atomic<bool> g_logged_first_poetter{false};
 // no moons to show you right now") rather than silently falling back to
 // vanilla.
 constexpr const char* kHardcodedProbe[3] = {
-    "ARCHIPELAGO TEST MOON #1",
-    "ARCHIPELAGO TEST MOON #2",
-    "ARCHIPELAGO TEST MOON #3",
+    "BK Moon #1",
+    "BK Moon #2",
+    "BK Moon #3",
 };
 
 }  // namespace
@@ -282,18 +282,19 @@ HOOK_DEFINE_TRAMPOLINE(TryFindShineMessageHook) {
                             world_id, index);
         }
 
-        // BRING-UP MODE (2026-05-20): substitute on EVERY Poetter call,
-        // regardless of talkatoo_mode. This is intentionally aggressive — the
-        // first end-to-end test (user-reported 2026-05-20) showed the hook
-        // fires + vtable filter works, but talkatoo_mode never got set
-        // because the Switch couldn't reach the SMOClient SwitchServer
-        // (Connect refused on 127.0.0.1:17777). To prove the in-game
-        // substitution path works independently of the bridge, ignore the
-        // mode flag here. Revert this to a `talkatoo_mode` gate once the
-        // bridge wire path is verified.
+        // Gate substitution on talkatoo_mode_on. Phase 4 originally ran
+        // the substitute on every Poetter call as a bring-up aid (the
+        // bridge wire path had been broken on the first end-to-end test,
+        // so probe-mode was kept unconditional to prove the SMO-side hook
+        // worked in isolation). That was meant to be reverted post-bring-
+        // up and got missed; without this gate, non-Talkatoo% players
+        // see "BK Moon #N" instead of vanilla Talkatoo speech.
         const bool talkatoo_mode_on =
             smoap::ap::ApState::instance().talkatoo_mode.load(
                 std::memory_order_acquire);
+        if (!talkatoo_mode_on) {
+            return vanilla;
+        }
 
         const std::uint8_t bit = smoap::game::kingdomBitForWorldId(world_id);
 
@@ -327,10 +328,14 @@ HOOK_DEFINE_TRAMPOLINE(TryFindShineMessageHook) {
             pool_size = n;
             chosen_ascii = picks[pick_idx];
         } else {
-            // Fallback to hardcoded probe.
-            const auto folded =
-                static_cast<unsigned int>(index ^ (world_id * 2654435761u));
-            pick_idx = folded % 3;
+            // Probe fallback. Cycle deterministically through #1/#2/#3
+            // across consecutive Poetter visits via an atomic counter —
+            // `index` from rs::calcShineIndexTableNameAvailable does vary
+            // per visit in vanilla, but the counter is bulletproof against
+            // RNG quirks (e.g. early-game seeds where Talkatoo's table
+            // state reproduces the same shine_index on consecutive picks).
+            static std::atomic<std::size_t> probe_cursor{0};
+            pick_idx = probe_cursor.fetch_add(1, std::memory_order_relaxed) % 3;
             pool_size = 3;
             chosen_ascii = kHardcodedProbe[pick_idx];
         }
