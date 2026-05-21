@@ -31,6 +31,16 @@ Patches applied:
      Ryujinx ARMeilleure 0xC0000005 on SMO 1.0.0 stage load. Patch expands
      TrampolineBackup to 8 slots and emits movz/movk + indirect/direct
      branch sequences as needed. Worth upstreaming to fruityloops1/LibHakkun.
+
+  8. (correctness) include/hk/services/socket/service.h:
+     Drop `const` on `Socket::recvFrom`'s `address` parameter. recvFrom is the
+     OUT direction (the kernel writes the sender's address into it), but
+     upstream declares `const A& address` and then passes `&address` into
+     `addOutAutoselect(void* data, u64 size, ...)`. The function won't compile
+     when instantiated — `const A*` → `void*` is a const violation. Bind and
+     connect (genuinely IN-direction) keep their `const A&` parameters via
+     `inFdInAddress`; this fix mirrors the OUT-direction pattern that
+     getPeerName/getSockName already use. Worth upstreaming.
 """
 
 import os
@@ -459,6 +469,31 @@ def main() -> int:
             "\n"
             "} // namespace hk::hook",
             sentinel="SMO_HAKKUN_PATCH_7c",
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Patch 8: drop `const` on Socket::recvFrom's address param.
+    # ------------------------------------------------------------------
+    # The original signature passes `&address` (a `const A*`) into
+    # `addOutAutoselect(void*, ...)`. Won't compile when instantiated; recvFrom
+    # is the OUT direction so the parameter should be non-const anyway.
+    report(
+        "service.h recvFrom drop-const on out-param address",
+        patch_file(
+            os.path.join(HAKKUN, "hakkun", "include", "hk", "services", "socket", "service.h"),
+            "        template <typename A, typename T>\n"
+            "            requires(std::is_convertible<A*, SocketAddr*>::value)\n"
+            "        ValueOrResult<Ret> recvFrom(s32 fd, Span<u8> buffer, s32 flags, const A& address) {\n",
+            "        // SMO_HAKKUN_PATCH_8: recvFrom is the OUT direction (kernel writes the\n"
+            "        // sender's addr into `address`), so `&address` cannot be `const`. The\n"
+            "        // upstream `const A&` declaration fails to compile when the function\n"
+            "        // is instantiated because addOutAutoselect takes `void*`, not\n"
+            "        // `const void*`. Mirrors getPeerName/getSockName.\n"
+            "        template <typename A, typename T>\n"
+            "            requires(std::is_convertible<A*, SocketAddr*>::value)\n"
+            "        ValueOrResult<Ret> recvFrom(s32 fd, Span<u8> buffer, s32 flags, A& address) {\n",
+            sentinel="SMO_HAKKUN_PATCH_8",
         ),
     )
 
