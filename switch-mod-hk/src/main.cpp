@@ -146,23 +146,21 @@ extern "C" void hkMain() {
     SMOAP_LOG_INFO("resolving M6-phase-D getPayShineNum lookup");
     smoap::game::installPayShineSnapshotSymbol();
 
-    // BISECT phase 4: phase 3 (ShineNumGet pair) was stable. Re-enabling the
-    // rest of the "game-event + capture/pay" hooks now. The two hook GROUPS
-    // still disabled are WorldMapSelect (5 sub-hooks installed at boot) and
-    // MoonLabel (3 sub-hooks, fire on shine-get cutscenes). If still stable
-    // -> culprit is in WorldMapSelect or MoonLabel. If crashes -> in one of
-    // these newly-re-enabled hooks.
-    SMOAP_LOG_INFO("BISECT phase 4: enabling game-event + capture/pay hooks");
+    // BISECT phase 5: phase 4 crashed -> culprit is in the 8 hooks re-enabled
+    // that round. Splitting in half: enabling the "game-event + save"
+    // sub-group (Scenario/MoonGet/Death/SaveLoad), keeping the "capture/pay"
+    // sub-group (AddHackDictionary/AddPayShine×2/CaptureStart) disabled.
+    SMOAP_LOG_INFO("BISECT phase 5: enabling game-event + save subgroup only");
     smoap::hooks::installScenarioFlagHook();
     smoap::hooks::installMoonGetHook();
     smoap::hooks::installDeathHook();
     smoap::hooks::installShineNumGetHook();
     smoap::hooks::installShineNumByWorldGetHook();
-    smoap::game::installCaptureGrantSymbols();
-    smoap::hooks::installAddHackDictionaryHook();
-    smoap::hooks::installAddPayShineHook();
-    smoap::hooks::installAddPayShineAllHook();
-    smoap::hooks::installCaptureStartHook();
+    smoap::game::installCaptureGrantSymbols();  // symbol resolution only, not a hook
+    // smoap::hooks::installAddHackDictionaryHook();
+    // smoap::hooks::installAddPayShineHook();
+    // smoap::hooks::installAddPayShineAllHook();
+    // smoap::hooks::installCaptureStartHook();
     // smoap::hooks::installWorldMapSelectHook();
     // smoap::hooks::installMoonLabelHook();
 
