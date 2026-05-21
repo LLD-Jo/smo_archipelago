@@ -128,12 +128,9 @@ HkTrampoline<void, const HakoniwaSequence*> drawMainHook =
         smoap::hooks::tickPendingUncapture();
         smoap::ui::drawHudFrame();
 
-        // BISECT phase 15: DRAIN DISABLED. Worker still pushes to ring; frame
-        // doesn't drain. CappyMessenger.queue_ stays empty for the duration.
-        // Survives -> having entries in Cappy.queue_ is the trigger (then we
-        // look at what tryPump does with non-empty queue under GPU pressure).
-        // Crashes  -> Cappy queue contents aren't the issue.
-        /*
+        // BISECT phase 16: drain restored so Cappy.queue_ gets entries;
+        // tryPump itself is SKIPPED so we never run the read-side path that
+        // exposed the JIT crash in phase 14.
         {
             smoap::ap::ApState::SystemBubble bubble;
             while (smoap::ap::ApState::instance()
@@ -141,11 +138,11 @@ HkTrampoline<void, const HakoniwaSequence*> drawMainHook =
                 smoap::ui::CappyMessenger::instance().enqueueSystem(bubble.text);
             }
         }
-        */
 
-        smoap::ui::CappyMessenger::instance().tryPump(
-            smoap::ap::ApState::instance().scene_cache.load(
-                std::memory_order_relaxed));
+        // smoap::ui::CappyMessenger::instance().tryPump(
+        //     smoap::ap::ApState::instance().scene_cache.load(
+        //         std::memory_order_relaxed));
+        SMOAP_LOG_DEBUG("[cappy] tryPump skipped (bisect phase 16)");
     });
 
 }  // namespace
