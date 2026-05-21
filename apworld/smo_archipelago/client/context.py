@@ -881,13 +881,38 @@ class SMOContext(CommonContext):
         return len(order)
 
     def _build_talkatoo_pool_phase5(self) -> dict[str, list[str]]:
-        """Build the per-kingdom window-of-3 from `self.talkatoo_order`."""
+        """Build the per-kingdom window-of-3 from `self.talkatoo_order`.
+
+        Walks order from `cursor` (smallest-uncollected index) and takes
+        the next 3 entries that are NOT in checked_locations. Filtering
+        mid-window matters because the player can collect out-of-order:
+        Talkatoo names order[cursor+2] in some visit, player collects
+        it, cursor stays at cursor (front entry still uncollected) — but
+        the collected entry must drop out of the window or Talkatoo will
+        keep re-suggesting it on subsequent visits (observed regression
+        2026-05-21: re-named 'Chomp Through the Rocks' immediately after
+        collection because the slice [cursor:cursor+3] didn't filter).
+
+        Sphere-safety still holds: cursor advancing past front-collected
+        entries is monotonic state growth, and skipping mid-window
+        collected entries means the player has at least as many items as
+        the validator's 'collected order[0..cursor-1]' baseline assumed.
+        """
         kingdoms: dict[str, list[str]] = {}
+        checked = self.checked_locations or set()
         for kingdom, order in self.talkatoo_order.items():
             cursor = self._compute_talkatoo_cursor(kingdom)
-            window = order[cursor:cursor + self._TALKATOO_WINDOW]
+            window: list[str] = []
+            for shine_id in order[cursor:]:
+                loc_name = f"{kingdom}: {shine_id}"
+                loc_id = self.dp.location_name_to_id.get(loc_name)
+                if loc_id is not None and loc_id in checked:
+                    continue
+                window.append(shine_id)
+                if len(window) >= self._TALKATOO_WINDOW:
+                    break
             if window:
-                kingdoms[kingdom] = list(window)
+                kingdoms[kingdom] = window
         return kingdoms
 
     def _build_talkatoo_pool_fallback(self) -> tuple[dict[str, list[str]], int]:

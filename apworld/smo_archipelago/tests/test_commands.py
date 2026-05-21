@@ -465,6 +465,51 @@ async def test_connected_phase5_cursor_skips_already_checked():
 
 
 @pytest.mark.asyncio
+async def test_connected_phase5_window_skips_mid_window_checks():
+    """Phase 5 regression (2026-05-21): when the player collects a moon
+    that wasn't at the cursor front (e.g. Talkatoo named order[cursor+2]
+    and the player went and got it), the window must drop that entry on
+    the next re-ship. The original `order[cursor:cursor+3]` slice didn't
+    filter checked entries, so Talkatoo kept re-suggesting collected
+    moons indefinitely (observed live: 'Chomp Through the Rocks' named
+    immediately after the player collected it).
+
+    Fix: walk from cursor and take the first 3 entries that are NOT in
+    checked_locations.
+    """
+    ctx = SMOContext(
+        server_address=None, password=None,
+        state=BridgeState(),
+        datapackage=DataPackage(apworld_data_dir=_APWORLD_DATA),
+        shine_map=ShineMap(),
+        capture_map=CaptureMap(),
+    )
+    ctx.auth = "Mario"
+    sw = _StubSwitch()
+    ctx.switch = sw  # type: ignore[assignment]
+
+    order = ["A", "B", "C", "D", "E", "F"]
+    for i, shine_id in enumerate(order):
+        name = f"Cascade: {shine_id}"
+        ctx.dp.location_id_to_name[10000 + i] = name
+        ctx.dp.location_name_to_id[name] = 10000 + i
+    # Player collected B and D mid-window. Cursor stays at 0 (A still
+    # uncollected); window walks A,B,C,D,E... skipping B and D → [A,C,E].
+    ctx.checked_locations = {10001, 10003}  # type: ignore[assignment]
+
+    await ctx._handle_ap_package("Connected", {
+        "slot_data": {
+            "talkatoo_mode": 1,
+            "talkatoo_order": {"Cascade": order},
+        },
+    })
+
+    enabled, kingdoms = sw.talkatoo_pool_calls[0]
+    assert enabled is True
+    assert kingdoms == {"Cascade": ["A", "C", "E"]}
+
+
+@pytest.mark.asyncio
 async def test_connected_phase5_empty_window_when_all_collected():
     """When every moon in a kingdom's order is collected, the cursor
     moves past the end and the window is empty — that kingdom drops
