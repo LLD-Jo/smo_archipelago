@@ -146,23 +146,23 @@ extern "C" void hkMain() {
     SMOAP_LOG_INFO("resolving M6-phase-D getPayShineNum lookup");
     smoap::game::installPayShineSnapshotSymbol();
 
-    // BISECT phase 3: phase 2 (all 19 disabled) was STABLE for 2+ min in a
-    // kingdom. So one of these 19 is the culprit. Re-enabling only the two
-    // that fire routinely during idle exploration: ShineNumGet (HUD shine
-    // count) and ShineNumByWorldGet (per-world HUD). If still stable, the
-    // culprit is in one of the user-action-driven hooks (capture, moon, world
-    // warp). If it crashes again, the culprit is one of these two.
-    SMOAP_LOG_INFO("BISECT phase 3: enabling ShineNumGet + ShineNumByWorldGet only");
-    // smoap::hooks::installScenarioFlagHook();
-    // smoap::hooks::installMoonGetHook();
-    // smoap::hooks::installDeathHook();
+    // BISECT phase 4: phase 3 (ShineNumGet pair) was stable. Re-enabling the
+    // rest of the "game-event + capture/pay" hooks now. The two hook GROUPS
+    // still disabled are WorldMapSelect (5 sub-hooks installed at boot) and
+    // MoonLabel (3 sub-hooks, fire on shine-get cutscenes). If still stable
+    // -> culprit is in WorldMapSelect or MoonLabel. If crashes -> in one of
+    // these newly-re-enabled hooks.
+    SMOAP_LOG_INFO("BISECT phase 4: enabling game-event + capture/pay hooks");
+    smoap::hooks::installScenarioFlagHook();
+    smoap::hooks::installMoonGetHook();
+    smoap::hooks::installDeathHook();
     smoap::hooks::installShineNumGetHook();
     smoap::hooks::installShineNumByWorldGetHook();
-    // smoap::game::installCaptureGrantSymbols();
-    // smoap::hooks::installAddHackDictionaryHook();
-    // smoap::hooks::installAddPayShineHook();
-    // smoap::hooks::installAddPayShineAllHook();
-    // smoap::hooks::installCaptureStartHook();
+    smoap::game::installCaptureGrantSymbols();
+    smoap::hooks::installAddHackDictionaryHook();
+    smoap::hooks::installAddPayShineHook();
+    smoap::hooks::installAddPayShineAllHook();
+    smoap::hooks::installCaptureStartHook();
     // smoap::hooks::installWorldMapSelectHook();
     // smoap::hooks::installMoonLabelHook();
 
@@ -208,9 +208,8 @@ extern "C" void hkMain() {
     SMOAP_LOG_INFO("resolving CappyMessenger rs:: function pointers");
     smoap::hooks::installCappyMessengerSymbols();
 
-    // BISECT phase 2: SaveLoad disabled too
-    SMOAP_LOG_INFO("SaveLoadHook DISABLED (bisect phase 2)");
-    // smoap::hooks::installSaveLoadHook();
+    SMOAP_LOG_INFO("installing SaveLoadHook (session-state reset + re-HELLO)");
+    smoap::hooks::installSaveLoadHook();
 
     SMOAP_LOG_INFO("=== hkMain END (waiting for GameSystem::init to fire) ===");
 }
