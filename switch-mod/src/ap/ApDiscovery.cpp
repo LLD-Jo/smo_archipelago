@@ -10,7 +10,7 @@
 #include <cstdint>
 #include <cstring>
 
-#include "hk/Span.h"
+#include "hk/container/Span.h"
 #include "hk/services/socket/address.h"
 #include "hk/services/socket/poll.h"
 #include "hk/services/socket/service.h"
@@ -169,7 +169,11 @@ bool oneProbe(s32 fd, const char* probe_data, std::size_t probe_len,
         return false;
     }
     const hk::socket::SocketAddrIpv4 addr = parsed.getInnerValue();
-    auto send_vor = sock->sendTo(
+    // Explicit <A, T>: recvFrom's T is unused in the parameter list (Span<u8>
+    // is hardcoded), so the compiler cannot deduce it. We specify both here on
+    // sendTo too for consistency with the recvFrom call below. Same phantom-
+    // 2nd-template-param shape as Socket::connect.
+    auto send_vor = sock->sendTo<hk::socket::SocketAddrIpv4, u8>(
         fd,
         hk::Span<const u8>(reinterpret_cast<const u8*>(probe_data), probe_len),
         0, addr);
@@ -188,7 +192,7 @@ bool oneProbe(s32 fd, const char* probe_data, std::size_t probe_len,
     if (!waitReadable(fd, timeout_ms)) return false;
     char buf[kReplyBufBytes];
     hk::socket::SocketAddrIpv4 from{};
-    auto recv_vor = sock->recvFrom(
+    auto recv_vor = sock->recvFrom<hk::socket::SocketAddrIpv4, u8>(
         fd,
         hk::Span<u8>(reinterpret_cast<u8*>(buf), sizeof(buf)),
         0, from);
