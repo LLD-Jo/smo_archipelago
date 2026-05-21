@@ -128,10 +128,12 @@ HkTrampoline<void, const HakoniwaSequence*> drawMainHook =
         smoap::hooks::tickPendingUncapture();
         smoap::ui::drawHudFrame();
 
-        // BISECT phase 17: drain on, tryPump on, but CappyMessenger.cpp's
-        // settle-gate log is commented out (see CappyMessenger.cpp line ~145).
-        // Phase 16 (tryPump skipped) survived. If phase 17 also survives,
-        // the SMOAP_LOG_INFO inside the settle gate is the trigger.
+        // Drain worker-thread system-bubble pushes before tryPump so a freshly
+        // arrived "Connected/Disconnected/Not connected to Archipelago" lands
+        // in CappyMessenger's queue in time for this frame's dispatch attempt.
+        // Direct worker-thread CappyMessenger access would race with frame-
+        // thread tryPump reads; the worker pushes onto the SPSC ring and we
+        // drain here from frame-thread context.
         {
             smoap::ap::ApState::SystemBubble bubble;
             while (smoap::ap::ApState::instance()
@@ -180,15 +182,14 @@ extern "C" void hkMain() {
     SMOAP_LOG_INFO("installing CaptureStartHook (capture lock + AP check)");
     smoap::hooks::installCaptureStartHook();
 
-    // BISECT phase 14: confirm the worker->ring fix actually solves the
-    // SaveLoad crash. Disable WorldMap (5), MoonLabel (3), and ShineAppearance
-    // which were OFF during the phase-4 bisect set. If this build is stable,
-    // the fix worked and one of those was the additional crash in the
-    // "everything on" run. If it crashes, the fix didn't actually help.
-    SMOAP_LOG_INFO("WorldMap/MoonLabel/ShineAppearance disabled (phase 14 isolation)");
-    // smoap::hooks::installWorldMapSelectHook();
-    // smoap::hooks::installMoonLabelHook();
-    // smoap::hooks::installShineAppearanceHook();
+    SMOAP_LOG_INFO("installing WorldMapSelectHook (M7 Path A)");
+    smoap::hooks::installWorldMapSelectHook();
+
+    SMOAP_LOG_INFO("installing M6-phase-A.5 cutscene label hooks");
+    smoap::hooks::installMoonLabelHook();
+
+    SMOAP_LOG_INFO("installing ShineAppearanceHook (AP-classification moon color)");
+    smoap::hooks::installShineAppearanceHook();
 
     SMOAP_LOG_INFO("resolving M6-phase-C snapshot enumeration symbols");
     smoap::game::installSnapshotSymbols();
@@ -216,8 +217,8 @@ extern "C" void hkMain() {
     SMOAP_LOG_INFO("CreditsStartHook DISABLED (see main.cpp for rationale)");
     // smoap::hooks::installCreditsStartHook();
 
-    SMOAP_LOG_INFO("CappyMessageTextHooks disabled (phase 14 isolation)");
-    // smoap::hooks::installCappyMessageTextHooks();
+    SMOAP_LOG_INFO("installing CappyMessenger text-lookup trampolines (4)");
+    smoap::hooks::installCappyMessageTextHooks();
     SMOAP_LOG_INFO("resolving CappyMessenger rs:: function pointers");
     smoap::hooks::installCappyMessengerSymbols();
 

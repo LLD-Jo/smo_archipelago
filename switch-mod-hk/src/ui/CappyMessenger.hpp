@@ -79,24 +79,24 @@ public:
     // bounded so a truly broken state eventually drops.
     static constexpr std::uint32_t kMaxRetryFrames = 9000;
 
-    // Defensive: wait this many frames AFTER we first see a non-null scene
-    // before attempting any rs:: dispatch. Gives the StageScene time to
+    // Defensive: wait this much wallclock time after we first see a non-null
+    // scene before attempting any rs:: dispatch. Gives the StageScene time to
     // finish endInit + register its SceneObjHolder children (CapMessage
     // Director among them). Otherwise rs::isActiveCapMessage NULL-derefs
     // on the un-registered director.
     //
-    // Was 120 (~2s). Crashed in Ryujinx 2026-05-17 on the first non-null
-    // scene at the title→save-load boundary: 120 frames after the scene
-    // pointer appeared, isActiveCapMessage still NULL-deref'd inside
-    // CapMessageLayout::isShow because the director sub-object wasn't yet
-    // registered with the scene's SceneObjHolder. 600 frames (~10s) is the
-    // new floor — generous, but the worst-case visible cost is a 10s delay
-    // before the first balloon shows after a scene transition, and items
-    // queue cleanly in the meantime.
-    // BISECT phase 19: bumped to 1M frames (~5 hours @ 60fps) so the
-    // settle-gate return in tryPump effectively never lifts. If still crashes,
-    // the gate's compare itself is the trigger.
-    static constexpr std::uint32_t kSceneSettleFrames = 1000000;
+    // Was 600 frames (~10s @ 60fps). Hakkun-on-Ryujinx exposed a latent
+    // assumption: when Ryujinx's GPU thread stalls, the emulator advances
+    // guest frames faster than wallclock 60fps in catch-up mode. 600 guest
+    // frames could elapse in 5-7 wallclock seconds — well before SMO's
+    // SceneObjHolder finished registration. The Ryujinx ARMeilleure JIT
+    // surfaced the resulting null-deref inside s_isActive as a translator
+    // fault rather than a guest abort.
+    //
+    // Wallclock gating works correctly on both Ryujinx (catch-up frames no
+    // longer break it) and real Switch (60fps locked, so 10000ms == 600
+    // frames as before).
+    static constexpr std::int64_t kSceneSettleMs = 10000;
 
     // On-screen duration. Passed as the THIRD positional arg to
     // rs::tryShowCapMessagePriorityLow (which the decompiler signature
@@ -190,12 +190,13 @@ private:
     std::uint32_t retry_frames_ = 0;
 
     // Scene-stability tracking for the settle-delay guard. last_scene_ is the
-    // pointer we saw on the last pump; settle_frames_ is the count of
-    // consecutive pumps where scene matched and was non-null. Dispatch is
-    // gated on settle_frames_ >= kSceneSettleFrames so a brand-new StageScene
-    // gets time to finish wiring up its SceneObjHolder before we poke it.
+    // pointer we saw on the last pump; scene_change_ms_ is the wallclock
+    // timestamp (ApState::nowMs basis) of the last scene transition. Dispatch
+    // is gated on (now - scene_change_ms_) >= kSceneSettleMs so a brand-new
+    // StageScene gets enough real time to finish wiring up its SceneObjHolder
+    // before we poke it — regardless of how the emulator paces guest frames.
     const void* last_scene_ = nullptr;
-    std::uint32_t settle_frames_ = 0;
+    std::int64_t scene_change_ms_ = 0;
 
     // Substitution buffer. Filled by tryPump immediately before calling
     // rs::tryShowCapMessagePriorityLow with kArchipelagoLabel; the hook
