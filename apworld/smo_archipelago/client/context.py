@@ -206,6 +206,13 @@ class SMOContext(CommonContext):
         # to hide the "Captures unlocked" section when capturesanity is
         # off — listing all 50 synthetic unlocks is noise, not signal.
         self.capturesanity_enabled = True
+        # Talkatoo% mode flag, populated from slot_data on AP Connected. When
+        # True, the Switch's TalkatooSpeechHook substitutes Talkatoo's speech
+        # bubble with up to 3 uncollected AP-pool moons from the current
+        # kingdom; SaveLoadHook also pre-marks non-AP moons as collected so
+        # they don't spawn. False (default) leaves Talkatoo and the world
+        # vanilla.
+        self.talkatoo_mode = False
         self.display_enabled = display_enabled
         # M-color: AP-classification -> palette index for in-world moon
         # coloring. Defaults give each non-filler classification a unique
@@ -726,6 +733,13 @@ class SMOContext(CommonContext):
                 # no-op when capturesanity is on or no Switch is
                 # connected.
                 await self.switch.push_capturesanity_replay()
+                # Talkatoo% mode: stash the slot flag and ship the per-
+                # kingdom AP-pool to the Switch. Same SNI-style gate as
+                # capturesanity — the HELLO usually fires before Connected,
+                # so the initial replay carried no pool. push_talkatoo_pool
+                # is a no-op when the payload isn't set yet.
+                self.talkatoo_mode = bool(slot_data.get("talkatoo_mode", 0))
+                await self._derive_and_push_talkatoo_pool()
                 await self.switch.send_ap_state("ready")
                 # M6 phase C — datapackage is now hot. If the Switch's
                 # state-snapshot landed during the AP handshake window, its
@@ -793,6 +807,46 @@ class SMOContext(CommonContext):
                     log.exception("try_fire_reconcile_cappy failed")
         # Bounced/DeathLink is handled via on_deathlink (CommonContext routes
         # for us; on_package needn't double-handle).
+
+    async def _derive_and_push_talkatoo_pool(self) -> None:
+        """Derive the per-kingdom AP-pool from THIS slot's locations and ship
+        it to the Switch.
+
+        Walks `missing_locations | checked_locations` (everything AP says we
+        own), groups by kingdom via DataPackage.classify_location, keeps only
+        MOON-kind entries, and emits a `{kingdom: [shine_id, ...]}` dict.
+        Captures and other non-moon locations are skipped — Talkatoo only
+        speaks moon names.
+
+        Called from the Connected handler. Idempotent across reconnects (each
+        call replaces the previous Switch-side pool). No-op when no Switch
+        is attached.
+        """
+        if self.switch is None:
+            return
+        kingdoms: dict[str, list[str]] = {}
+        loc_ids = (self.missing_locations or set()) | (self.checked_locations or set())
+        for loc_id in loc_ids:
+            name = self.dp.location_id_to_name.get(loc_id)
+            if not name:
+                continue
+            cl = self.dp.classify_location(name)
+            if cl.kind != ItemKind.MOON or not cl.kingdom or not cl.shine_id:
+                continue
+            kingdoms.setdefault(cl.kingdom, []).append(cl.shine_id)
+        # Sort each kingdom's list deterministically so the Switch sees a
+        # stable order across reconnects (matters for the "next pick"
+        # selection when the Switch picks deterministically — randomization
+        # can layer on top of a stable input).
+        for k in kingdoms:
+            kingdoms[k].sort()
+        self.switch.set_talkatoo_pool(self.talkatoo_mode, kingdoms)
+        log.info(
+            "[talkatoo] mode=%s pool=%s",
+            self.talkatoo_mode,
+            {k: len(v) for k, v in sorted(kingdoms.items())},
+        )
+        await self.switch.push_talkatoo_pool()
 
     async def _push_palette_for_scout_batch(self, args: dict) -> None:
         """Derive (shine_uid -> palette) from one LocationInfo packet's

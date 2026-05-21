@@ -67,6 +67,8 @@ class _StubSwitch:
         self.push_capturesanity_calls: int = 0
         self.deathlink_calls: list[bool] = []
         self.push_deathlink_calls: int = 0
+        self.talkatoo_pool_calls: list[tuple[bool, dict[str, list[str]]]] = []
+        self.push_talkatoo_calls: int = 0
 
     async def send_item(self, item: ItemMsg) -> None:
         self.items.append(item)
@@ -98,6 +100,12 @@ class _StubSwitch:
 
     async def push_deathlink_helloack(self) -> None:
         self.push_deathlink_calls += 1
+
+    def set_talkatoo_pool(self, enabled: bool, kingdoms: dict[str, list[str]]) -> None:
+        self.talkatoo_pool_calls.append((bool(enabled), {k: list(v) for k, v in kingdoms.items()}))
+
+    async def push_talkatoo_pool(self) -> None:
+        self.push_talkatoo_calls += 1
 
 
 @pytest.mark.asyncio
@@ -255,11 +263,77 @@ async def test_connected_handler_tolerates_missing_slot_data():
     # No slot_data key at all.
     await ctx._handle_ap_package("Connected", {})
     assert sw.capturesanity_calls == [False]
+    assert ctx.talkatoo_mode is False
 
     # Explicit None.
     sw.capturesanity_calls.clear()
     await ctx._handle_ap_package("Connected", {"slot_data": None})
     assert sw.capturesanity_calls == [False]
+    assert ctx.talkatoo_mode is False
+
+
+@pytest.mark.asyncio
+async def test_connected_handler_honors_slot_data_talkatoo_mode_on():
+    """`talkatoo_mode: 1` in slot_data flips the SMOContext flag and pushes
+    the per-kingdom AP-pool to the Switch. The pool is derived from the
+    union of missing_locations + checked_locations classified through the
+    DataPackage, so a context with no datapackage entries pushes an empty
+    pool but still sets the flag."""
+    ctx = SMOContext(
+        server_address=None, password=None,
+        state=BridgeState(),
+        datapackage=DataPackage(),
+        shine_map=ShineMap(),
+        capture_map=CaptureMap(),
+    )
+    ctx.auth = "Mario"
+    sw = _StubSwitch()
+    ctx.switch = sw  # type: ignore[assignment]
+
+    assert ctx.talkatoo_mode is False
+
+    await ctx._handle_ap_package("Connected", {
+        "slot_data": {"capturesanity": 0, "talkatoo_mode": 1},
+    })
+
+    assert ctx.talkatoo_mode is True
+    # set_talkatoo_pool fires regardless of pool content so the Switch's
+    # _talkatoo_configured flag flips and push_talkatoo_pool() stops being
+    # a no-op.
+    assert len(sw.talkatoo_pool_calls) == 1
+    enabled, kingdoms = sw.talkatoo_pool_calls[0]
+    assert enabled is True
+    # No datapackage entries on this stub ctx → empty pool, but the call
+    # itself happened.
+    assert kingdoms == {}
+    assert sw.push_talkatoo_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_connected_handler_honors_slot_data_talkatoo_mode_off():
+    """`talkatoo_mode: 0` keeps the default — Switch still gets a set_
+    talkatoo_pool call (with enabled=False) so any prior session's state
+    is cleared on the Switch side."""
+    ctx = SMOContext(
+        server_address=None, password=None,
+        state=BridgeState(),
+        datapackage=DataPackage(),
+        shine_map=ShineMap(),
+        capture_map=CaptureMap(),
+    )
+    ctx.auth = "Mario"
+    sw = _StubSwitch()
+    ctx.switch = sw  # type: ignore[assignment]
+
+    await ctx._handle_ap_package("Connected", {
+        "slot_data": {"talkatoo_mode": 0},
+    })
+
+    assert ctx.talkatoo_mode is False
+    assert len(sw.talkatoo_pool_calls) == 1
+    enabled, _ = sw.talkatoo_pool_calls[0]
+    assert enabled is False
+    assert sw.push_talkatoo_calls == 1
 
 
 @pytest.mark.asyncio

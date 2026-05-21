@@ -107,6 +107,15 @@ class _StubSwitch:
     async def push_deathlink_helloack(self) -> None:
         pass
 
+    def set_talkatoo_pool(self, enabled: bool, kingdoms: dict[str, list[str]]) -> None:
+        # SMOContext._handle_ap_package("Connected", ...) computes the Talkatoo
+        # AP-pool from this slot's locations and pushes it. No-op for the
+        # loopback assertions — the seed has Talkatoo% off.
+        pass
+
+    async def push_talkatoo_pool(self) -> None:
+        pass
+
 
 def _free_port() -> int:
     """Pick a free TCP port for the local MultiServer to bind."""

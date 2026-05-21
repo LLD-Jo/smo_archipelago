@@ -37,6 +37,8 @@ from .protocol import (
     OutstandingMsg,
     PongMsg,
     ShineScoutsMsg,
+    TalkatooPoolMsg,
+    kingdom_ap_to_switch,
 )
 from .state import BridgeState, CheckEvent, ItemEvent
 
@@ -263,6 +265,16 @@ class SwitchServer:
         # the scout shows the item is for our slot, we synthesize a Cappy
         # ItemMsg so the player learns what they got offline.
         self._reconcile_cappy_pending: set[int] = set()
+        # Talkatoo% mode payload. Set by SMOContext after Connected once the
+        # slot_data + datapackage are both available. Stored as the input
+        # (enabled flag + AP-form per-kingdom moon lists) so HELLO replays
+        # can re-emit one message per kingdom across Switch reconnects.
+        # `_talkatoo_configured` distinguishes "never set" (push is a no-op,
+        # HELLO arrived before AP Connected) from "deliberately off"
+        # (push sends a disable message).
+        self._talkatoo_configured: bool = False
+        self._talkatoo_enabled: bool = False
+        self._talkatoo_kingdoms: dict[str, list[str]] = {}
 
     def set_deathlink_enabled(self, enabled: bool) -> None:
         """Update the bridge-side DeathLink gate. Called by SMOContext after
@@ -449,6 +461,53 @@ class SwitchServer:
         The Switch overwrites `ap_moons_kingdom[bit]` for each entry.
         """
         await self._send(msg)
+
+    def set_talkatoo_pool(self, enabled: bool, kingdoms: dict[str, list[str]]) -> None:
+        """Stash the Talkatoo% per-kingdom AP-pool payload.
+
+        Stored verbatim so HELLO replays can re-ship it across Switch
+        reconnects. Takes effect on the NEXT push_talkatoo_pool() call OR
+        the next HELLO. Caller is expected to follow up with
+        push_talkatoo_pool() so the currently-attached Switch receives the
+        new pool immediately.
+
+        `kingdoms` keys are AP-form kingdom names (e.g. "Cap", "Bowser's");
+        push_talkatoo_pool applies kingdom_ap_to_switch per entry at send
+        time. Empty `kingdoms` with `enabled=True` is allowed (means "no
+        AP-pool moons in any kingdom" — Talkatoo will show no hints) and is
+        wire-different from `enabled=False` (which tells the Switch
+        Talkatoo% mode is off entirely).
+        """
+        self._talkatoo_enabled = bool(enabled)
+        self._talkatoo_kingdoms = {k: list(v) for k, v in kingdoms.items()}
+        # Mark configured even when there are zero kingdoms — distinguishes
+        # "never set" (push is a no-op) from "deliberately off" (push sends
+        # the disable message).
+        self._talkatoo_configured = True
+
+    async def push_talkatoo_pool(self) -> None:
+        """Send TalkatooPool message(s) to the Switch — one per kingdom when
+        enabled, or a single disable message when off.
+
+        Chunked per-kingdom to stay under the 8 KiB line limit (Sand at 62
+        moons would otherwise straddle). No-op when set_talkatoo_pool has
+        never been called (HELLO before AP Connected — the context handler
+        re-pushes from the Connected handler once slot_data lands).
+        """
+        if not getattr(self, "_talkatoo_configured", False):
+            return
+        if not self._talkatoo_enabled:
+            await self._send(TalkatooPoolMsg(enabled=False, kingdom="", moons=[]))
+            return
+        # One message per kingdom. Apply AP→Switch kingdom translation just
+        # before send so the stored payload stays in AP form (matches
+        # BridgeState's internal model).
+        for kingdom_ap, moons in self._talkatoo_kingdoms.items():
+            await self._send(TalkatooPoolMsg(
+                enabled=True,
+                kingdom=kingdom_ap_to_switch(kingdom_ap) or kingdom_ap,
+                moons=list(moons),
+            ))
 
     async def send_shine_scouts(self, palette: dict[int, int]) -> None:
         """Push (shine_uid -> palette) to the active Switch, chunked.
@@ -830,6 +889,14 @@ class SwitchServer:
             ))
 
         await self.push_capturesanity_replay()
+
+        # Talkatoo% mode: ship the per-kingdom AP-pool (or Phase 5 cursor
+        # window) to the Switch so the speech-bubble hook can pick from
+        # it. No-op when SMOContext hasn't delivered a payload yet
+        # (Switch HELLO before AP Connected — the context handler
+        # re-pushes after slot_data lands).
+        await self.push_talkatoo_pool()
+
         # Shine palette replay (per-uid). Routed through _send so it
         # targets the active conn — but during the post-HELLO sequence we
         # may be replaying to a connection that's about to become active.
