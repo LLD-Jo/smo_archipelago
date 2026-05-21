@@ -146,17 +146,16 @@ extern "C" void hkMain() {
     SMOAP_LOG_INFO("resolving M6-phase-D getPayShineNum lookup");
     smoap::game::installPayShineSnapshotSymbol();
 
-    // BISECT phase 5: phase 4 crashed -> culprit is in the 8 hooks re-enabled
-    // that round. Splitting in half: enabling the "game-event + save"
-    // sub-group (Scenario/MoonGet/Death/SaveLoad), keeping the "capture/pay"
-    // sub-group (AddHackDictionary/AddPayShine×2/CaptureStart) disabled.
-    SMOAP_LOG_INFO("BISECT phase 5: enabling game-event + save subgroup only");
+    // BISECT phase 6: phase 5 crashed -> culprit in {Scenario, MoonGet,
+    // Death, SaveLoad}. Splitting in half: Scenario + MoonGet enabled,
+    // Death + SaveLoad disabled.
+    SMOAP_LOG_INFO("BISECT phase 6: Scenario + MoonGet only (Death + SaveLoad off)");
     smoap::hooks::installScenarioFlagHook();
     smoap::hooks::installMoonGetHook();
-    smoap::hooks::installDeathHook();
+    // smoap::hooks::installDeathHook();
     smoap::hooks::installShineNumGetHook();
     smoap::hooks::installShineNumByWorldGetHook();
-    smoap::game::installCaptureGrantSymbols();  // symbol resolution only, not a hook
+    smoap::game::installCaptureGrantSymbols();
     // smoap::hooks::installAddHackDictionaryHook();
     // smoap::hooks::installAddPayShineHook();
     // smoap::hooks::installAddPayShineAllHook();
@@ -206,8 +205,8 @@ extern "C" void hkMain() {
     SMOAP_LOG_INFO("resolving CappyMessenger rs:: function pointers");
     smoap::hooks::installCappyMessengerSymbols();
 
-    SMOAP_LOG_INFO("installing SaveLoadHook (session-state reset + re-HELLO)");
-    smoap::hooks::installSaveLoadHook();
+    SMOAP_LOG_INFO("SaveLoadHook DISABLED (bisect phase 6)");
+    // smoap::hooks::installSaveLoadHook();
 
     SMOAP_LOG_INFO("=== hkMain END (waiting for GameSystem::init to fire) ===");
 }
