@@ -193,6 +193,14 @@ public:
     // pairs. Frame thread drains and folds into shine_palette[].
     SpscRing<ShineScout, 4096> inbound_scouts;
 
+    // socket -> frame. Route worker-thread Cappy system-bubble enqueues
+    // through here to avoid the non-atomic queue_[] race with frame-thread
+    // tryPump. 16 slots is plenty (~3-4 in flight at most).
+    struct SystemBubble {
+        char text[64];
+    };
+    SpscRing<SystemBubble, 16> inbound_system_bubbles;
+
     // frame-thread-only state below
 
     std::bitset<128> captures_unlocked;     // 43 used; index from capture_table.h
