@@ -147,6 +147,18 @@ constexpr const char* kHardcodedProbe[3] = {
     "BK Moon #3",
 };
 
+// Per-kingdom Talkatoo visit counter. The substitute hook in the AP-pool
+// path advances slot[bit] on each visit and uses (counter % 3) for
+// pick_idx, producing a deterministic 0->1->2->0 cycle through the
+// kingdom's window. Per-kingdom (not global) so visiting Cascade
+// Talkatoo doesn't perturb Sand Talkatoo's cycle.
+//
+// Indexed by kingdom_bit (0..16). kTalkatooKingdomCount mirrors
+// ApState's array dimension; static_assert at install time keeps them
+// in sync if a future kingdom is added.
+std::atomic<std::size_t> g_talkatoo_visit_counters[
+    smoap::ap::ApState::kTalkatooKingdomCount] = {};
+
 }  // namespace
 
 // Snapshot the AP-pool for `kingdom_bit` and return up to 3 uncollected moon
@@ -194,12 +206,32 @@ bool pickThreeUncollectedFromKingdom(
     }
     if (idx_count == 0) return false;
 
+    // Phase 5 (Gap #3 follow-up, 2026-05-21): when idx_count <= 3 (which
+    // is the Phase 5 cursor-window case — bridge ships exactly 3 ordered
+    // moons per kingdom), preserve input order so the per-kingdom visit
+    // counter in the substitute hook produces a stable A->B->C->A cycle.
+    // Fisher-Yates re-shuffling each visit broke that: the counter would
+    // cycle pick_idx 0/1/2, but slot 0 was a different moon each visit,
+    // so the player saw repeats. For idx_count > 3 (Phase 4 fallback path,
+    // bridge ships a larger pool), keep Fisher-Yates so the Switch picks
+    // a different 3-subset per visit — preserves variety in the absence
+    // of a bridge-side cursor.
+    if (idx_count <= 3) {
+        const std::size_t pick = idx_count;
+        for (std::size_t k = 0; k < pick; ++k) {
+            std::memcpy(out[k], snapshot[idx_buf[k]], smoap::ap::kCheckFieldCap);
+            out[k][smoap::ap::kCheckFieldCap - 1] = '\0';
+        }
+        *out_count = pick;
+        return true;
+    }
+
     auto seed = static_cast<std::uint32_t>(
         smoap::ap::ApState::nowMs() & 0xFFFFFFFFu);
     if (seed == 0) seed = 0xC0FFEE;
 
-    const std::size_t pick = (idx_count < 3) ? idx_count : 3;
-    for (std::size_t k = 0; k < pick; ++k) {
+    constexpr std::size_t kPick = 3;
+    for (std::size_t k = 0; k < kPick; ++k) {
         const std::size_t remain = idx_count - k;
         const std::size_t r = cheapRand(seed) % remain;
         const std::uint8_t winner = idx_buf[r];
@@ -207,7 +239,7 @@ bool pickThreeUncollectedFromKingdom(
         std::memcpy(out[k], snapshot[winner], smoap::ap::kCheckFieldCap);
         out[k][smoap::ap::kCheckFieldCap - 1] = '\0';
     }
-    *out_count = pick;
+    *out_count = kPick;
     return true;
 }
 
@@ -321,12 +353,29 @@ HOOK_DEFINE_TRAMPOLINE(TryFindShineMessageHook) {
         const char* chosen_ascii;
         std::size_t pool_size;
         std::size_t pick_idx;
+        bool chose_padding = false;
         if (have_ap_pool) {
-            const auto folded =
-                static_cast<unsigned int>(index ^ (world_id * 2654435761u));
-            pick_idx = folded % n;
-            pool_size = n;
+            const std::size_t real_n = n;
+            // Pad picks[] with probe strings if the AP pool returned <3
+            // real entries (end-of-order in a kingdom with shorter
+            // remaining window, or a kingdom whose pool genuinely has
+            // fewer than 3 ordered moons). Keeps Talkatoo's rotation at
+            // a consistent 3 slots so the player always sees a stable
+            // A/B/C cycle — even if some of those are placeholders.
+            for (std::size_t k = real_n; k < 3; ++k) {
+                std::memcpy(picks[k], kHardcodedProbe[k],
+                            std::strlen(kHardcodedProbe[k]) + 1);
+            }
+            // Per-kingdom counter for strict 0/1/2 cycling. `index` from
+            // rs::calcShineIndexTableNameAvailable varies per visit but
+            // doesn't monotonically cycle, so `index % n` can land on
+            // the same slot twice in a row before moving on — the
+            // counter eliminates that.
+            auto& counter = g_talkatoo_visit_counters[bit];
+            pick_idx = counter.fetch_add(1, std::memory_order_relaxed) % 3;
+            pool_size = 3;
             chosen_ascii = picks[pick_idx];
+            chose_padding = (pick_idx >= real_n);
         } else {
             // Probe fallback. Cycle deterministically through #1/#2/#3
             // across consecutive Poetter visits via an atomic counter —
@@ -344,8 +393,11 @@ HOOK_DEFINE_TRAMPOLINE(TryFindShineMessageHook) {
         // Phase 4: publish the named moon to ApState. Block path in
         // MoonGetHook consults isMoonNamed before letting setGotShine run.
         // Skipped for the PROBE fallback (kHardcodedProbe entries don't have
-        // shine_uids — they exist only to prove the hook fires).
-        if (have_ap_pool) {
+        // shine_uids — they exist only to prove the hook fires) and for
+        // the AP-path's padded probe slots (when the cursor window had <3
+        // real entries we fill from kHardcodedProbe; chose_padding flags
+        // a pick that landed on one of those padding slots).
+        if (have_ap_pool && !chose_padding) {
             const int shine_uid =
                 smoap::game::shineUidByDisplayName(chosen_ascii);
             if (shine_uid >= 0) {
