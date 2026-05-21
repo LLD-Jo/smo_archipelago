@@ -383,6 +383,228 @@ async def test_connected_handler_filters_progression_moons_from_talkatoo_pool():
 
 
 @pytest.mark.asyncio
+async def test_connected_handler_consumes_phase5_talkatoo_order():
+    """Gap #3 / Phase 5: when slot_data ships `talkatoo_order`, the
+    bridge ships a window of 3 (the cursor-front of each kingdom) to
+    the Switch instead of the full filtered pool. Cursor starts at 0
+    because no locations are in checked_locations yet."""
+    ctx = SMOContext(
+        server_address=None, password=None,
+        state=BridgeState(),
+        datapackage=DataPackage(apworld_data_dir=_APWORLD_DATA),
+        shine_map=ShineMap(),
+        capture_map=CaptureMap(),
+    )
+    ctx.auth = "Mario"
+    sw = _StubSwitch()
+    ctx.switch = sw  # type: ignore[assignment]
+
+    # Wire datapackage name <-> id for the kingdom's moons so the cursor
+    # can resolve which loc_ids belong to the order.
+    cascade_order_full = [
+        "Chomp Through the Rocks", "Behind the Waterfall", "On Top of the Rubble",
+        "Treasure of the Waterfall Basin", "Above a High Cliff",
+    ]
+    for i, shine_id in enumerate(cascade_order_full):
+        name = f"Cascade: {shine_id}"
+        ctx.dp.location_id_to_name[5000 + i] = name
+        ctx.dp.location_name_to_id[name] = 5000 + i
+
+    await ctx._handle_ap_package("Connected", {
+        "slot_data": {
+            "talkatoo_mode": 1,
+            "talkatoo_order": {"Cascade": cascade_order_full},
+        },
+    })
+
+    assert ctx.talkatoo_mode is True
+    assert ctx.talkatoo_order == {"Cascade": cascade_order_full}
+    assert len(sw.talkatoo_pool_calls) == 1
+    enabled, kingdoms = sw.talkatoo_pool_calls[0]
+    assert enabled is True
+    # Window of 3 from the front of the order — cursor starts at 0
+    # because no checked_locations were preloaded.
+    assert kingdoms == {"Cascade": cascade_order_full[:3]}
+
+
+@pytest.mark.asyncio
+async def test_connected_phase5_cursor_skips_already_checked():
+    """Cursor = smallest index whose loc isn't in checked_locations.
+    If the player has already collected the front 2 moons (from a
+    prior session), the initial window starts at index 2."""
+    ctx = SMOContext(
+        server_address=None, password=None,
+        state=BridgeState(),
+        datapackage=DataPackage(apworld_data_dir=_APWORLD_DATA),
+        shine_map=ShineMap(),
+        capture_map=CaptureMap(),
+    )
+    ctx.auth = "Mario"
+    sw = _StubSwitch()
+    ctx.switch = sw  # type: ignore[assignment]
+
+    order = ["A", "B", "C", "D", "E"]
+    for i, shine_id in enumerate(order):
+        name = f"Cap: {shine_id}"
+        ctx.dp.location_id_to_name[6000 + i] = name
+        ctx.dp.location_name_to_id[name] = 6000 + i
+    # First two already collected.
+    ctx.checked_locations = {6000, 6001}  # type: ignore[assignment]
+
+    await ctx._handle_ap_package("Connected", {
+        "slot_data": {
+            "talkatoo_mode": 1,
+            "talkatoo_order": {"Cap": order},
+        },
+    })
+
+    enabled, kingdoms = sw.talkatoo_pool_calls[0]
+    assert enabled is True
+    # Cursor at 2 → window is [C, D, E].
+    assert kingdoms == {"Cap": ["C", "D", "E"]}
+
+
+@pytest.mark.asyncio
+async def test_connected_phase5_empty_window_when_all_collected():
+    """When every moon in a kingdom's order is collected, the cursor
+    moves past the end and the window is empty — that kingdom drops
+    from the pool dict entirely (avoids a no-op send to the Switch)."""
+    ctx = SMOContext(
+        server_address=None, password=None,
+        state=BridgeState(),
+        datapackage=DataPackage(apworld_data_dir=_APWORLD_DATA),
+        shine_map=ShineMap(),
+        capture_map=CaptureMap(),
+    )
+    ctx.auth = "Mario"
+    sw = _StubSwitch()
+    ctx.switch = sw  # type: ignore[assignment]
+
+    order = ["X", "Y"]
+    for i, shine_id in enumerate(order):
+        name = f"Lake: {shine_id}"
+        ctx.dp.location_id_to_name[7000 + i] = name
+        ctx.dp.location_name_to_id[name] = 7000 + i
+    ctx.checked_locations = {7000, 7001}  # all collected
+
+    await ctx._handle_ap_package("Connected", {
+        "slot_data": {
+            "talkatoo_mode": 1,
+            "talkatoo_order": {"Lake": order},
+        },
+    })
+
+    enabled, kingdoms = sw.talkatoo_pool_calls[0]
+    assert enabled is True
+    assert kingdoms == {}  # Lake dropped — nothing to send
+
+
+@pytest.mark.asyncio
+async def test_roomupdate_slides_cursor_when_check_lands_in_order():
+    """RoomUpdate with a new check on a moon in talkatoo_order advances
+    the cursor for that kingdom and re-ships the pool."""
+    ctx = SMOContext(
+        server_address=None, password=None,
+        state=BridgeState(),
+        datapackage=DataPackage(apworld_data_dir=_APWORLD_DATA),
+        shine_map=ShineMap(),
+        capture_map=CaptureMap(),
+    )
+    ctx.auth = "Mario"
+    sw = _StubSwitch()
+    ctx.switch = sw  # type: ignore[assignment]
+
+    order = ["A", "B", "C", "D"]
+    for i, shine_id in enumerate(order):
+        name = f"Sand: {shine_id}"
+        ctx.dp.location_id_to_name[8000 + i] = name
+        ctx.dp.location_name_to_id[name] = 8000 + i
+
+    await ctx._handle_ap_package("Connected", {
+        "slot_data": {
+            "talkatoo_mode": 1,
+            "talkatoo_order": {"Sand": order},
+        },
+    })
+    sw.talkatoo_pool_calls.clear()  # focus assertions on the next push
+
+    # Player collects A. CommonContext.process_server_cmd merges the
+    # delta into checked_locations BEFORE on_package fires — simulate.
+    ctx.checked_locations.add(8000)
+    await ctx._handle_ap_package("RoomUpdate", {
+        "checked_locations": [8000],
+    })
+
+    # Cursor advanced to 1; window is now [B, C, D].
+    assert len(sw.talkatoo_pool_calls) == 1
+    _enabled, kingdoms = sw.talkatoo_pool_calls[0]
+    assert kingdoms == {"Sand": ["B", "C", "D"]}
+
+
+@pytest.mark.asyncio
+async def test_roomupdate_skips_reship_when_check_unrelated_to_talkatoo():
+    """Capture-location checks and other-game checks shouldn't trigger
+    a re-ship — the cursor for talkatoo_order can't possibly have moved."""
+    ctx = SMOContext(
+        server_address=None, password=None,
+        state=BridgeState(),
+        datapackage=DataPackage(apworld_data_dir=_APWORLD_DATA),
+        shine_map=ShineMap(),
+        capture_map=CaptureMap(),
+    )
+    ctx.auth = "Mario"
+    sw = _StubSwitch()
+    ctx.switch = sw  # type: ignore[assignment]
+
+    order = ["A", "B", "C"]
+    for i, shine_id in enumerate(order):
+        name = f"Wooded: {shine_id}"
+        ctx.dp.location_id_to_name[9000 + i] = name
+        ctx.dp.location_name_to_id[name] = 9000 + i
+    # A capture loc_id that's not in any kingdom order.
+    ctx.dp.location_id_to_name[9999] = "Capture: Goomba"
+    ctx.dp.location_name_to_id["Capture: Goomba"] = 9999
+
+    await ctx._handle_ap_package("Connected", {
+        "slot_data": {
+            "talkatoo_mode": 1,
+            "talkatoo_order": {"Wooded": order},
+        },
+    })
+    sw.talkatoo_pool_calls.clear()
+
+    ctx.checked_locations.add(9999)
+    await ctx._handle_ap_package("RoomUpdate", {
+        "checked_locations": [9999],
+    })
+
+    # No re-ship — the check wasn't a talkatoo_order moon.
+    assert len(sw.talkatoo_pool_calls) == 0
+
+
+@pytest.mark.asyncio
+async def test_roomupdate_skips_when_talkatoo_mode_off():
+    """RoomUpdate handler is a no-op when talkatoo_mode is off, even if
+    talkatoo_order is somehow populated. Guards against doing work on
+    non-Talkatoo seeds where this whole path is irrelevant."""
+    ctx = SMOContext(
+        server_address=None, password=None,
+        state=BridgeState(),
+        datapackage=DataPackage(apworld_data_dir=_APWORLD_DATA),
+        shine_map=ShineMap(),
+        capture_map=CaptureMap(),
+    )
+    ctx.auth = "Mario"
+    sw = _StubSwitch()
+    ctx.switch = sw  # type: ignore[assignment]
+    # talkatoo_mode off, talkatoo_order empty.
+    await ctx._handle_ap_package("RoomUpdate", {
+        "checked_locations": [12345],
+    })
+    assert sw.talkatoo_pool_calls == []
+
+
+@pytest.mark.asyncio
 async def test_connected_handler_honors_slot_data_talkatoo_mode_off():
     """`talkatoo_mode: 0` keeps the default — Switch still gets a set_
     talkatoo_pool call (with enabled=False) so any prior session's state

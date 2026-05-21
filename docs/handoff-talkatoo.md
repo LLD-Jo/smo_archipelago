@@ -102,7 +102,39 @@ def _build_talkatoo_pool_for_kingdom(self, kingdom: str, locs: Iterable[Location
 
 ## Gap #3 — Phase 5: Sphere-safe ordering
 
-### What's wrong today
+**Status: closed 2026-05-21.** Implemented as a greedy random-tiebreak
+validator in [apworld/.../talkatoo_order.py](../apworld/smo_archipelago/talkatoo_order.py),
+wired into `after_fill_slot_data` in
+[hooks/World.py](../apworld/smo_archipelago/hooks/World.py), consumed
+by the bridge via a per-kingdom cursor in
+[client/context.py](../apworld/smo_archipelago/client/context.py).
+
+**Notable deviation from the original sketch:** the validator initially
+ran with state = precollected only, which the handoff doc sketched.
+That model failed loud on the default option set — Bowser's kingdom's
+34 AP-pool moons aren't reachable without items from Cap → Ruined.
+Fixed by sweeping advancement items from all of this slot's non-pool
+locations BEFORE running greedy: the state at cursor=0 represents
+"player has just entered this kingdom with the items they earned to
+get here." See the docstring for the right-pessimism-level rationale.
+
+**Files touched:**
+- `apworld/smo_archipelago/talkatoo_order.py` (new) — validator
+- `apworld/smo_archipelago/hooks/World.py` — `after_fill_slot_data` wire
+- `apworld/smo_archipelago/client/context.py` — bridge cursor consumer
+  + RoomUpdate handler
+- `apworld/smo_archipelago/tests/test_talkatoo_order.py` (new) — 14
+  validator unit tests using stub reachability oracles (no AP needed)
+- `apworld/smo_archipelago/tests/test_commands.py` — 6 bridge cursor
+  tests (Connected, RoomUpdate, skip-reship gates)
+- `apworld/smo_archipelago/tests/test_apworld_generation.py` —
+  `talkatoo_mode` scenario added (gated on SMOAP_LIVE_AP=1)
+- `docs/milestones.md` — Phase 5 narrative
+
+**Switch-side hook unchanged.** TalkatooSpeechHook.cpp's `index % n`
+picker handles n=3 from the bridge naturally — no code change needed.
+
+### What was wrong
 
 The substitute hook picks AP-pool moons via
 `(world_id, vanilla_index) % pool_size`. The mapping has no awareness of

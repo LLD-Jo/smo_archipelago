@@ -213,6 +213,13 @@ class SMOContext(CommonContext):
         # they don't spawn. False (default) leaves Talkatoo and the world
         # vanilla.
         self.talkatoo_mode = False
+        # Phase 5 (Gap #3): per-kingdom sphere-safe ordered list of moon
+        # shine_ids from the apworld. Empty means "no Phase 5 order shipped"
+        # — bridge falls back to shipping the full filtered pool (old
+        # behavior, can still soft-lock on fresh starts; only kept so an
+        # older apworld build that doesn't ship `talkatoo_order` still
+        # works). Keyed by AP-form kingdom name ("Cascade", "Bowser's").
+        self.talkatoo_order: dict[str, list[str]] = {}
         self.display_enabled = display_enabled
         # M-color: AP-classification -> palette index for in-world moon
         # coloring. Defaults give each non-filler classification a unique
@@ -739,6 +746,16 @@ class SMOContext(CommonContext):
                 # so the initial replay carried no pool. push_talkatoo_pool
                 # is a no-op when the payload isn't set yet.
                 self.talkatoo_mode = bool(slot_data.get("talkatoo_mode", 0))
+                # Phase 5 (Gap #3): apworld ships a per-kingdom sphere-safe
+                # order so Talkatoo never names a moon the player can't
+                # reach. When absent (older apworld builds), the bridge
+                # falls back to the full filtered pool — see
+                # _derive_and_push_talkatoo_pool for both paths.
+                raw_order = slot_data.get("talkatoo_order") or {}
+                self.talkatoo_order = {
+                    str(k): [str(s) for s in (v or [])]
+                    for k, v in raw_order.items()
+                }
                 await self._derive_and_push_talkatoo_pool()
                 await self.switch.send_ap_state("ready")
                 # M6 phase C — datapackage is now hot. If the Switch's
@@ -777,6 +794,22 @@ class SMOContext(CommonContext):
             seed = args.get("seed_name") or args.get("seed")
             if seed:
                 self.state.seed = seed
+        elif cmd == "RoomUpdate":
+            # Phase 5 (Gap #3): checked_locations may have grown — either
+            # because we just sent a LocationChecks for an in-game moon
+            # collection or because another player /collect'd or released
+            # one of our locations. Recompute cursor windows and re-ship.
+            # No-op when Phase 5 isn't active (talkatoo_order empty).
+            if self.talkatoo_mode and self.talkatoo_order and self.switch is not None:
+                # `args.get("checked_locations")` is a delta list. We only
+                # re-ship if at least one of the new checks is in any
+                # kingdom's talkatoo_order — otherwise nothing changed.
+                # CommonContext has already merged the delta into
+                # self.checked_locations by now (super().on_package runs
+                # before _handle_ap_package).
+                new_checks = set(args.get("checked_locations") or [])
+                if not new_checks or self._any_check_in_talkatoo_order(new_checks):
+                    await self._derive_and_push_talkatoo_pool()
         elif cmd == "ReceivedItems":
             await self._process_received_items(args)
         elif cmd == "DataPackage":
@@ -808,22 +841,60 @@ class SMOContext(CommonContext):
         # Bounced/DeathLink is handled via on_deathlink (CommonContext routes
         # for us; on_package needn't double-handle).
 
-    async def _derive_and_push_talkatoo_pool(self) -> None:
-        """Derive the per-kingdom AP-pool from THIS slot's locations and ship
-        it to the Switch.
+    # Phase 5 (Gap #3): cursor window size. Mirror of switch-mod's
+    # pickThreeUncollectedFromKingdom 3-slot output; capped here so we don't
+    # ship surplus to the Switch (TalkatooKingdomPool::kMaxMoons is 96, but
+    # the Switch picker only uses up to 3). One slot beyond what the picker
+    # consumes would still work, but keeping it at 3 is the contract.
+    _TALKATOO_WINDOW = 3
 
-        Walks `missing_locations | checked_locations` (everything AP says we
-        own), groups by kingdom via DataPackage.classify_location, keeps only
-        MOON-kind entries, and emits a `{kingdom: [shine_id, ...]}` dict.
-        Captures and other non-moon locations are skipped — Talkatoo only
-        speaks moon names.
+    def _any_check_in_talkatoo_order(self, loc_ids: set[int]) -> bool:
+        """True if any of `loc_ids` is one of the moons in
+        `self.talkatoo_order`. Used by the RoomUpdate handler to short-
+        circuit re-shipping when the delta is unrelated to Talkatoo (e.g.
+        a capture-location check, or a /collect for a non-moon)."""
+        for kingdom, order in self.talkatoo_order.items():
+            for shine_id in order:
+                loc_name = f"{kingdom}: {shine_id}"
+                loc_id = self.dp.location_name_to_id.get(loc_name)
+                if loc_id is not None and loc_id in loc_ids:
+                    return True
+        return False
 
-        Called from the Connected handler. Idempotent across reconnects (each
-        call replaces the previous Switch-side pool). No-op when no Switch
-        is attached.
+    def _compute_talkatoo_cursor(self, kingdom: str) -> int:
+        """Phase 5: position in `talkatoo_order[kingdom]` of the next
+        uncollected moon, derived from `self.checked_locations`.
+
+        Cursor = smallest index i such that `f"{kingdom}: {order[i]}"` is
+        NOT in `self.checked_locations`. Skips already-collected entries
+        at the front so the window slides forward as the player collects.
+        Robust to out-of-order collection (player collects order[i+2]
+        first → cursor stays at i; next visit names order[i] or order[i+1]).
         """
-        if self.switch is None:
-            return
+        order = self.talkatoo_order.get(kingdom, [])
+        checked = self.checked_locations or set()
+        for i, shine_id in enumerate(order):
+            loc_name = f"{kingdom}: {shine_id}"
+            loc_id = self.dp.location_name_to_id.get(loc_name)
+            if loc_id is None or loc_id not in checked:
+                return i
+        return len(order)
+
+    def _build_talkatoo_pool_phase5(self) -> dict[str, list[str]]:
+        """Build the per-kingdom window-of-3 from `self.talkatoo_order`."""
+        kingdoms: dict[str, list[str]] = {}
+        for kingdom, order in self.talkatoo_order.items():
+            cursor = self._compute_talkatoo_cursor(kingdom)
+            window = order[cursor:cursor + self._TALKATOO_WINDOW]
+            if window:
+                kingdoms[kingdom] = list(window)
+        return kingdoms
+
+    def _build_talkatoo_pool_fallback(self) -> tuple[dict[str, list[str]], int]:
+        """Pre-Phase-5 fallback: derive the full filtered pool from
+        `missing_locations | checked_locations`. Only reached when the
+        apworld didn't ship `talkatoo_order` (older builds). Returns the
+        pool and the count of progression-flagged moons dropped."""
         kingdoms: dict[str, list[str]] = {}
         loc_ids = (self.missing_locations or set()) | (self.checked_locations or set())
         progression_filtered = 0
@@ -844,18 +915,46 @@ class SMOContext(CommonContext):
                 continue
             kingdoms.setdefault(cl.kingdom, []).append(cl.shine_id)
         # Sort each kingdom's list deterministically so the Switch sees a
-        # stable order across reconnects (matters for the "next pick"
-        # selection when the Switch picks deterministically — randomization
-        # can layer on top of a stable input).
+        # stable order across reconnects.
         for k in kingdoms:
             kingdoms[k].sort()
+        return kingdoms, progression_filtered
+
+    async def _derive_and_push_talkatoo_pool(self) -> None:
+        """Derive the per-kingdom AP-pool to ship to the Switch.
+
+        Two paths:
+          * Phase 5 (preferred): slot_data["talkatoo_order"] gave us a
+            per-kingdom sphere-safe ordering. Ship the cursor-window of 3
+            for each kingdom (cursor = position of next uncollected moon).
+            The Switch's substitute hook picks one from the 3.
+          * Pre-Phase-5 fallback: ship the full filtered pool from
+            missing+checked. Can soft-lock on fresh starts when 3 random
+            unfiltered picks are all gated; Phase 5 fixes that.
+
+        Called from the Connected handler AND from `_handle_ap_package`
+        for RoomUpdate (so the window slides forward as the player and
+        other players collect locations). Idempotent — each call replaces
+        the previous Switch-side pool. No-op when no Switch is attached.
+        """
+        if self.switch is None:
+            return
+        if self.talkatoo_order:
+            kingdoms = self._build_talkatoo_pool_phase5()
+            log.info(
+                "[talkatoo] mode=%s phase5 pool=%s",
+                self.talkatoo_mode,
+                {k: len(v) for k, v in sorted(kingdoms.items())},
+            )
+        else:
+            kingdoms, progression_filtered = self._build_talkatoo_pool_fallback()
+            log.info(
+                "[talkatoo] mode=%s fallback pool=%s progression_filtered=%d",
+                self.talkatoo_mode,
+                {k: len(v) for k, v in sorted(kingdoms.items())},
+                progression_filtered,
+            )
         self.switch.set_talkatoo_pool(self.talkatoo_mode, kingdoms)
-        log.info(
-            "[talkatoo] mode=%s pool=%s progression_filtered=%d",
-            self.talkatoo_mode,
-            {k: len(v) for k, v in sorted(kingdoms.items())},
-            progression_filtered,
-        )
         await self.switch.push_talkatoo_pool()
 
     async def _push_palette_for_scout_batch(self, args: dict) -> None:
