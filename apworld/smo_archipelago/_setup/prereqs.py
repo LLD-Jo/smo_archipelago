@@ -901,13 +901,30 @@ def check_ninja() -> PrereqResult:
 
 
 def bundled_hactool_path() -> Path:
-    """Where the wizard's auto-installer writes hactool, and where the
-    extractor's fallback constant points. Single source of truth so the
-    installer + the detector + the extractor agree."""
-    appdata = os.environ.get("APPDATA")
-    if appdata:
-        return Path(appdata) / "SMOArchipelago" / "bundled" / "hactool.exe"
-    return Path.home() / ".local" / "share" / "SMOArchipelago" / "bundled" / "hactool.exe"
+    """Where the wizard's auto-installer writes hactool.
+
+    Note the name predates the location move: hactool.exe used to live
+    inside `%APPDATA%/SMOArchipelago/bundled/` next to the extracted
+    apworld zip contents. That broke whenever `_extract_bundled_tree`
+    refreshed the bundled tree (it `shutil.rmtree`s the whole dir),
+    silently wiping the installed hactool. The file is now top-level
+    under APPDATA so a bundled-tree refresh leaves it alone. The
+    function name is kept for caller compatibility -- see
+    `legacy_bundled_hactool_path()` for the pre-fix location, still
+    probed as a fallback in `check_hactool`.
+    """
+    from . import appdata_root
+    return appdata_root() / "hactool.exe"
+
+
+def legacy_bundled_hactool_path() -> Path:
+    """The pre-fix install location -- `bundled/hactool.exe`. Kept as a
+    back-compat probe so users who installed before the location move
+    don't see their hactool reported as missing after pulling the fix.
+    `check_hactool` walks both this and `bundled_hactool_path()`.
+    """
+    from . import appdata_root
+    return appdata_root() / "bundled" / "hactool.exe"
 
 
 def check_hactool(override_path: Path | None = None) -> PrereqResult:
@@ -949,6 +966,19 @@ def check_hactool(override_path: Path | None = None) -> PrereqResult:
         return PrereqResult(
             "hactool", "hactool", True,
             f"{bundled} (auto-installed)",
+            auto_installable=True,
+        )
+
+    # Back-compat: users who installed before the location move (when
+    # `bundled_hactool_path()` lived at `bundled/hactool.exe`) still have
+    # the file at the old path. Probe it so they don't see a regression
+    # after pulling the fix; the next `install_hactool` call promotes the
+    # file to the new location.
+    legacy = legacy_bundled_hactool_path()
+    if legacy.is_file():
+        return PrereqResult(
+            "hactool", "hactool", True,
+            f"{legacy} (auto-installed, legacy location)",
             auto_installable=True,
         )
 

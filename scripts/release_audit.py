@@ -203,6 +203,11 @@ ALLOWED_GLOBS: dict[str, tuple[str, ...]] = {
         "build/*",
         "bundled/**",
         "bundled/.source-zip-mtime",
+        # Wizard-managed tool installs land top-level (sibling to
+        # bundled/) so a bundled-tree refresh doesn't wipe them. Pre-fix
+        # this lived inside `bundled/`; the legacy location is still
+        # covered by the `bundled/**` glob above for users mid-migration.
+        "hactool.exe",
         "setup_state.json",
         "wizard.log",
     ),
