@@ -761,6 +761,20 @@ def test_run_deploy_custom_requires_explicit_path() -> None:
     assert "--deploy-path is required" in outcome.error
 
 
+def test_run_deploy_custom_rejects_missing_parent(tmp_path) -> None:
+    """A typo'd custom path like `C:/totally/made/up/folder` must not
+    silently materialize four nested directories. The parent has to
+    exist; only the leaf is created. Mirrors the Kivy wizard's
+    pre-refactor check so the GUI and CLI accept the same paths."""
+    bogus = tmp_path / "does_not_exist" / "child"
+    outcome = run_deploy("custom", bogus, {"subsdk9": tmp_path / "x"})
+    assert outcome.ok is False
+    assert "parent does not exist" in outcome.error
+    # Critical: nothing got created.
+    assert not bogus.exists()
+    assert not bogus.parent.exists()
+
+
 def test_run_deploy_ryujinx_uses_autodetect_when_path_omitted(
     monkeypatch, tmp_path,
 ) -> None:

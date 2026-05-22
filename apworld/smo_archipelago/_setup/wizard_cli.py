@@ -585,6 +585,16 @@ def run_deploy(
             _emit(callback, "phase_end", phase=PHASE_DEPLOY, t0=anchor,
                   ok=False, error=err)
             return DeployOutcome(ok=False, target="custom", error=err)
+        # Reject typo'd parents -- a `Path("C:/totally/made/up").mkdir(
+        # parents=True)` would silently create the entire tree, which
+        # is rarely what the user wants (they typed a wrong path, not
+        # a request to materialize a four-deep folder hierarchy). The
+        # leaf may not exist (we'll mkdir it), but the parent must.
+        if not target_path.parent.exists():
+            err = f"Custom folder parent does not exist: {target_path.parent}"
+            _emit(callback, "phase_end", phase=PHASE_DEPLOY, t0=anchor,
+                  ok=False, error=err)
+            return DeployOutcome(ok=False, target="custom", error=err)
         target_path.mkdir(parents=True, exist_ok=True)
         result = deploy_to_custom_folder(target_path, build_outputs)
     else:
