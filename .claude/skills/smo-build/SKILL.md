@@ -11,15 +11,20 @@ The Switch mod targets SMO 1.0.0 and is built on [LibHakkun](https://github.com/
 
 **Ryujinx FIRST, real Switch never as the first test.** A failed Switch launch increments HOS's "title failed to launch" counter for SMO; enough failures shows "Corrupted data detected" prompts (recoverable in ~1 min via Settings → Data Management → Check for Corrupted Data, but a poor experience). Every subsdk build boots clean in Ryujinx before being copied to the SD card.
 
-## Step 0 (one-time after fresh clone or items.json change)
+## Step 0 (one-time after fresh clone, or after items.json / locations.json / shine_map.json changes)
 
-Generate `switch-mod/src/ap/capture_table.h`. The file is gitignored, so on first build `CaptureGate.cpp` fails with `../ap/capture_table.h: No such file or directory` until you run:
+Both `switch-mod/src/ap/capture_table.h` and `switch-mod/src/ap/shine_table.h` are gitignored — on first build `CaptureGate.cpp` / `SaveLoadHook.cpp` fail with `../ap/<table>.h: No such file or directory` until you run:
 
 ```pwsh
 python C:\Users\maxwe\Documents\smo_archipelago\scripts\sync_capture_table.py
+python C:\Users\maxwe\Documents\smo_archipelago\scripts\sync_shine_table.py
 ```
 
-Rerun this whenever `apworld/smo_archipelago/data/items.json` changes (the table maps cap-name → bit-index for the Switch mod; out-of-sync table = wrong bit assignments).
+Rerun:
+- **`sync_capture_table.py`** whenever `apworld/smo_archipelago/data/items.json` or `client/data/capture_map.json` changes (cap-name → bit-index mapping; out-of-sync = wrong bit assignments).
+- **`sync_shine_table.py`** whenever `apworld/smo_archipelago/data/locations.json` or `client/data/shine_map.json` changes (per-moon `(stage, obj_id, shine_uid, kingdom, name, progression)` table consumed by SaveLoadHook, MoonGetHook, and shine_lookup). When `shine_map.json` is absent the script emits an empty stub so the build still compiles, but Phase 2 pre-marking and Talkatoo% block silently no-op — extract first if you care about either.
+
+Both tables are gitignored because they join apworld JSON with the gitignored extracted maps and reproduce the load-bearing shape of those maps for AP-pool moons/captures. See CLAUDE.md's "Never commit Nintendo IP" section for the full rationale.
 
 ## Step 1: build (~30s)
 
@@ -154,24 +159,26 @@ Module ships as `subsdk9` at `sd:/atmosphere/contents/0100000000010000/exefs/sub
 
 A fresh `.claude/worktrees/<name>/` (or `git worktree add`) is missing three pieces the build needs. Do all three up-front, in this order — each fails differently and step 3 reads files written by step 2:
 
-1. **Init `switch-mod/sys` (LibHakkun) + `switch-mod/lib/OdysseyHeaders` submodules** (the wrapper script applies the Windows-port patches before the first compile):
+1. **Init the three switch-mod submodules** (LibHakkun, OdysseyHeaders, Dear ImGui — the wrapper script applies the Windows-port patches before the first compile):
    ```pwsh
-   git -C <worktree> submodule update --init --recursive switch-mod/sys switch-mod/lib/OdysseyHeaders
+   git -C <worktree> submodule update --init --recursive `
+       switch-mod/sys switch-mod/lib/OdysseyHeaders switch-mod/lib/imgui
    ```
-   Skipping → cmake configure fails on missing `sys/cmake/toolchain.cmake`.
+   Skipping `sys` → cmake configure fails on missing `sys/cmake/toolchain.cmake`. Skipping `lib/imgui` → cmake configure fails with `Cannot find source file: switch-mod/lib/imgui/imgui.cpp` (the `sys/addons/ImGui` target the on-Switch debug overlay added in commit `8bea80b`).
 
 2. **Copy generated data files** (gitignored, per-machine — extracted from a Nintendo NSP via the `smo-extract-data` skill; copy from main checkout is faster):
    ```pwsh
    Copy-Item C:/Users/maxwe/Documents/smo_archipelago/apworld/smo_archipelago/client/data/*.json `
              <worktree>/apworld/smo_archipelago/client/data/
    ```
-   Skipping is **silent at build time** but corrupts runtime: `sync_capture_table.py` (step 3) falls back to identity-only `kCaptureHackNames` (every entry equals `kCaptureNames`), so M7 hack-name lookups for SMO-internal names like `Kuribo` / `TRex` fail-open and the capture-lock gate doesn't deny.
+   Skipping is **silent at build time** but corrupts runtime: `sync_capture_table.py` (step 3) falls back to identity-only `kCaptureHackNames` (every entry equals `kCaptureNames`), so M7 hack-name lookups for SMO-internal names like `Kuribo` / `TRex` fail-open and the capture-lock gate doesn't deny. `sync_shine_table.py` (also step 3) falls back to an empty `kShineTable`, which silently disables Phase 2 pre-marking and Talkatoo% block.
 
-3. **Run `sync_capture_table.py`** (Step 0 above; reads `capture_map.json` from step 2 to populate the diverged hack-name array):
+3. **Run `sync_capture_table.py` + `sync_shine_table.py`** (Step 0 above; both read the maps from step 2 to populate the joined tables):
    ```pwsh
    python <worktree>/scripts/sync_capture_table.py
+   python <worktree>/scripts/sync_shine_table.py
    ```
-   Skipping → first compile of `CaptureGate.cpp` fails with `../ap/capture_table.h: No such file or directory`.
+   Skipping either → first compile of `CaptureGate.cpp` / `SaveLoadHook.cpp` fails with `../ap/<table>.h: No such file or directory`.
 
 ## SMO already inits nn::socket — open a parallel hk::socket client
 
@@ -179,8 +186,24 @@ Never call `nn::socket::Initialize` from subsdk9. SMO 1.0.0 calls it itself duri
 
 In the Hakkun build, we don't touch `nn::socket` at all. `ApClient` opens its **own** `hk::socket::Socket` client against `bsd:u` (parallel to SMO's), with its own `sm:` handle + transfer-memory pool. That isolates our reconnect loop and selectable behavior from whatever the game does with sockets internally.
 
-## libnx extern "C" gotcha (historical — exlaunch-era)
+## Hakkun internals you'll trip over
 
-Pre-cutover, lunakit's `lib/nx/kernel/svc.h` and `lib/nx/result.h` declared functions without `extern "C"` and the wrapper lived in `lib/nx/nx.h`. C++ TUs that `#include`'d the inner headers got mangled call sites against C-linkage stubs and aborted at runtime with `[rtld] unresolved _Z20svc...`.
+### `hk::socket::Socket` template quirks
 
-LibHakkun bundles its own syscall/result surface under `hk/svc/` and `hk/Result.h` with consistent `extern "C"` boundaries, so the trap is gone — but recognize the symptom shape (`[rtld] unresolved _Z<mangled>`) if a future addition reintroduces a similar mismatch.
+Two `hk::socket::Socket` signatures don't deduce cleanly and need a workaround at every call site (or an upstream patch). Both bit us during the phase 3b ApClient port:
+
+1. **`Socket::connect` has a phantom 2nd template parameter** that template-deduction cannot infer:
+   ```cpp
+   template <typename A, typename B>
+       requires(std::is_convertible<A*, SocketAddr*>::value)
+   ValueOrResult<Ret> connect(s32 fd, const A& address);
+   ```
+   `B` is never referenced in the signature or body. Calls fail with "no matching member function." Workaround: explicit args, e.g. `sock->connect<SocketAddrIpv4, int>(fd, addr)`.
+
+2. **Templated `setSockOpt(fd, lvl, opt, const T&)` fails to compile inside its own body.** The convenience overload wraps to `Span<const u8>(&opt, sizeof(T))`, but `&opt` is `const T*` (e.g. `const s32*`) and `Span<const u8>`'s constructor wants `const u8*` — no implicit pointer conversion. Workaround: call the explicit Span-taking overload with `reinterpret_cast<const u8*>(&opt)`.
+
+These are landmines from API drafts that compile-tested only with templated-stub callers. If you find similar template-deduction surprises elsewhere in `hk/services/socket/service.h`, consider promoting all three to a `patch_hakkun.py` patch (patches 5–10 there are the model).
+
+### `HkTrampoline` AArch64 PC-relative relocation (already patched)
+
+Upstream `hk::hook::TrampolineHook::installAtOffset` does NOT relocate PC-relative instructions when saving the original prologue — calling `.orig()` on any hooked function whose first instruction is `adrp`/`adr`/`b`/`bl`/`b.cond`/`cbz`/`tbz`/`ldr-literal` corrupts execution. Crash signature in Ryujinx: ARMeilleure host throws `0xC0000005` in `Translator.Execute`, no guest creport. **The fix is shipped** in `scripts/patch_hakkun.py` patches 7a/b/c: the relocator decodes adrp/adr → movz/movk, b/bl → range-checked imm26 or movz+blr, conditional branches → inverted-skip + long-jump. `TrampolineBackup` reserves 8 instruction slots per entry, page-aligned (0x1000) so nested trampolines stay on different ARMeilleure JIT translation blocks. Upstream-PR-ready against fruityloops1/LibHakkun. If you ever bisect a "boot clean, crash mid-frame" regression: comment out hook installs in `main.cpp` to find which prologue Hakkun isn't relocating; the highest-frequency suspects are hooks targeting `Shine::init`, `CappyMessage*`, and other per-spawn functions.
