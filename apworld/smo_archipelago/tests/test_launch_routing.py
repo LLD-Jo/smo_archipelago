@@ -124,3 +124,60 @@ def test_button_click_with_no_args_routes_to_smoclient(spy, smo_mod) -> None:
     assert name == "SMOClient"
     assert func_name == "launch"
     assert args == ()
+
+
+def test_invalid_smoap_surfaces_warning_and_still_launches(spy, tmp_path, smo_mod, monkeypatch) -> None:
+    """A malformed `.meatballsap` must (1) not crash the launcher, (2)
+    still route to SMOClient with the file path stripped, and (3) leave
+    a visible diagnostic so the user/dev can tell *why* the pre-fill
+    didn't happen — a silent `logging.warning` is invisible when the
+    Launcher process has no console attached (file-association case)."""
+    bad = tmp_path / "AP_test_bogus.meatballsap"
+    bad.write_bytes(b"not a zip and not valid JSON")
+
+    warnings: list[tuple[str, str]] = []
+
+    def fake_warning(context, exc, *, notifier=None, log_writer=None):
+        warnings.append((context, str(exc)))
+
+    # Patch in the loaded launcher_errors module so the call site
+    # `from ._setup.launcher_errors import show_launch_warning` picks up
+    # the fake when re-imported (Python caches the module).
+    import importlib
+    le = importlib.import_module("worlds.meatballs._setup.launcher_errors")
+    monkeypatch.setattr(le, "show_launch_warning", fake_warning)
+
+    smo_mod.launch_smo_client(str(bad))
+
+    # Warning surfaced
+    assert len(warnings) == 1
+    context, _ = warnings[0]
+    assert "could not be parsed" in context
+    assert "AP_test_bogus.meatballsap" in context
+
+    # Launch still happened, with the bad path stripped (no .meatballsap
+    # arg reaches argparse downstream)
+    assert len(spy) == 1
+    name, func_name, args = spy[0]
+    assert name == "SMOClient"
+    assert func_name == "launch"
+    assert all(not a.endswith(".meatballsap") for a in args)
+
+
+def test_parse_args_empty_does_not_read_sys_argv(smo_mod, monkeypatch) -> None:
+    """`parse_args([])` must NOT fall through to sys.argv.
+
+    Regression: file-association launches (double-click `.meatballsap`)
+    leave AP Launcher's own argv intact in `sys.argv`. If our parser
+    falls through to it, it sees the `.meatballsap` path as an unknown
+    positional and exits with code 2 — surfacing as a launch-crash
+    popup to the user. Setting `sys.argv` to garbage here would have
+    triggered that exact SystemExit before the fix.
+    """
+    from client.main import parse_args  # type: ignore[import-not-found]
+
+    monkeypatch.setattr(sys, "argv", ["ArchipelagoLauncher.exe", "garbage.meatballsap"])
+    # Must not raise SystemExit:
+    ns = parse_args([])
+    assert ns.name is None
+    assert ns.connect is None
