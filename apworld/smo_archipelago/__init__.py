@@ -551,11 +551,18 @@ def launch_smo_client(*args):
             final_args = [a for a in final_args if not a.endswith(".meatballsap")]
             final_args = smoap_to_launch_args(s) + final_args
         except Exception as e:
-            # Don't block the launch — log and let SMOClient open with no
-            # pre-fill so the user can connect manually.
-            logging.getLogger(__name__).warning(
-                "could not parse %s: %s; launching SMOClient without pre-fill",
-                smoap_path, e,
+            # Don't block the launch — surface the failure so the user
+            # (and we, if they report) can see why their .meatballsap
+            # didn't pre-fill, then let SMOClient open with the Connect
+            # bar blank. logging.warning alone would vanish into a void
+            # since the Launcher has no console attached on file-assoc
+            # invocations.
+            from ._setup.launcher_errors import show_launch_warning
+            show_launch_warning(
+                f".meatballsap could not be parsed ({Path(smoap_path).name}) — "
+                "SMOClient will open without pre-fill; enter your slot name "
+                "manually in the Connect bar.",
+                e,
             )
             final_args = [a for a in final_args if not a.endswith(".meatballsap")]
 

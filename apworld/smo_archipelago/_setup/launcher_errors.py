@@ -78,11 +78,61 @@ def visible_errors(context: str) -> Callable[[_F], _F]:
     return deco
 
 
+def show_launch_warning(
+    context: str,
+    exc: BaseException,
+    *,
+    notifier: Callable[[str, str], None] | None = None,
+    log_writer: Callable[[str], str | None] | None = None,
+) -> None:
+    """Surface a non-fatal launch-time problem via log file + Tk popup.
+
+    Sibling of `show_launch_error` for the case where the caller has
+    already decided launch can continue with degraded behavior (e.g.
+    `.meatballsap` parse failed → open SMOClient with no pre-fill). Writes
+    to a separate log file (`launch-warning.log`) so a subsequent fatal
+    error doesn't overwrite this diagnostic, and uses `showwarning`
+    (yellow triangle) rather than `showerror` to match the "launch is
+    continuing" framing. Does NOT re-raise — the caller is recovering.
+    """
+    tb_text = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+
+    log_writer = log_writer if log_writer is not None else _default_warning_log_writer
+    log_path_msg = ""
+    try:
+        written_to = log_writer(f"=== SMO Archipelago launch warning ({context}) ===\n{tb_text}")
+        if written_to:
+            log_path_msg = f"\n\nFull traceback written to:\n{written_to}"
+    except Exception:
+        pass
+
+    notifier = notifier if notifier is not None else _default_warning_notifier
+    snippet = tb_text if len(tb_text) <= 1000 else "...\n" + tb_text[-1000:]
+    try:
+        notifier(
+            f"SMO Archipelago — {context}",
+            f"{context}\n\n{snippet}{log_path_msg}",
+        )
+    except Exception:
+        pass
+
+
 def _default_log_writer(text: str) -> str | None:
     """Write the crash log under %APPDATA%/SMOArchipelago/. Returns the
     written-to path so the caller can include it in the messagebox."""
     from . import appdata_root  # local: this file is in the same package
     log_path = appdata_root() / "launch-crash.log"
+    log_path.write_text(text, encoding="utf-8")
+    return str(log_path)
+
+
+def _default_warning_log_writer(text: str) -> str | None:
+    """Like `_default_log_writer` but writes to `launch-warning.log` so a
+    later fatal crash in the same launch session doesn't clobber the
+    diagnostic for a recoverable problem (e.g. `.meatballsap` parse
+    failure)."""
+    from . import appdata_root
+    log_path = appdata_root() / "launch-warning.log"
     log_path.write_text(text, encoding="utf-8")
     return str(log_path)
 
@@ -96,5 +146,18 @@ def _default_notifier(title: str, body: str) -> None:
     root.withdraw()
     try:
         tkinter.messagebox.showerror(title, body)
+    finally:
+        root.destroy()
+
+
+def _default_warning_notifier(title: str, body: str) -> None:
+    """Same as `_default_notifier` but uses `showwarning` (yellow triangle)
+    to signal a non-fatal problem with continued execution."""
+    import tkinter
+    import tkinter.messagebox
+    root = tkinter.Tk()
+    root.withdraw()
+    try:
+        tkinter.messagebox.showwarning(title, body)
     finally:
         root.destroy()

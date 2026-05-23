@@ -319,7 +319,12 @@ async def main(args: argparse.Namespace) -> None:
 
 def launch(*launch_args: str) -> None:
     """Launcher entry point. Called from the Component's `launch_client`."""
-    args = parse_args(list(launch_args) or None)
+    # Always pass the explicit list — never fall through to sys.argv. When
+    # the Launcher invokes us via a `.meatballsap` file association, AP's
+    # outer argv still holds the file path; falling through would feed it
+    # to our argparse, which doesn't know about that positional and bails
+    # with SystemExit(2). `parse_args([])` is the safe no-args case.
+    args = parse_args(list(launch_args))
     # Utils.init_logging is the standard hook other in-AP clients call so
     # log files land in the standard place under Archipelago/logs/.
     Utils.init_logging("SMOClient", exception_logger="Client")

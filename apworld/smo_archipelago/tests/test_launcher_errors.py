@@ -10,7 +10,7 @@ and the same silent failure mode.
 
 from __future__ import annotations
 
-from _setup.launcher_errors import show_launch_error, visible_errors
+from _setup.launcher_errors import show_launch_error, show_launch_warning, visible_errors
 
 
 def test_visible_errors_invokes_notifier_on_crash() -> None:
@@ -122,6 +122,61 @@ def test_show_launch_error_survives_failing_log_writer() -> None:
     # No log_path_msg should appear since the writer raised before returning
     # a path. Don't assert on absence of "Full traceback written to" — the
     # important thing is the dialog appeared with the error in it.
+
+
+def test_show_launch_warning_does_not_raise() -> None:
+    """`show_launch_warning` must surface the diagnostic AND return
+    normally — callers (e.g. `.meatballsap` parse-failure recovery in
+    `launch_smo_client`) rely on launch continuing past the warning."""
+    notifications: list[tuple[str, str]] = []
+    logs: list[str] = []
+
+    def fake_notifier(title: str, body: str) -> None:
+        notifications.append((title, body))
+
+    def fake_log_writer(text: str) -> str | None:
+        logs.append(text)
+        return "/tmp/fake-warning.log"
+
+    try:
+        raise ValueError("bad smoap payload")
+    except ValueError as e:
+        # No try/except needed — show_launch_warning must not raise.
+        show_launch_warning(
+            ".meatballsap could not be parsed",
+            e,
+            notifier=fake_notifier,
+            log_writer=fake_log_writer,
+        )
+
+    assert len(notifications) == 1
+    title, body = notifications[0]
+    assert ".meatballsap could not be parsed" in title
+    assert "bad smoap payload" in body
+    assert "/tmp/fake-warning.log" in body
+
+    assert len(logs) == 1
+    assert "ValueError: bad smoap payload" in logs[0]
+    assert "Traceback" in logs[0]
+
+
+def test_show_launch_warning_log_file_distinct_from_error_log(tmp_path, monkeypatch) -> None:
+    """The warning's default log writer must NOT overwrite
+    `launch-crash.log` — if a recoverable warning fires earlier in the
+    launch and a fatal crash follows, both diagnostics must survive."""
+    import _setup as setup_pkg
+    import _setup.launcher_errors as le
+
+    monkeypatch.setattr(setup_pkg, "appdata_root", lambda: tmp_path)
+
+    warning_path = le._default_warning_log_writer("warning payload")
+    error_path = le._default_log_writer("error payload")
+
+    assert warning_path is not None and error_path is not None
+    # Different files: a later error log doesn't overwrite an earlier warning.
+    assert warning_path != error_path
+    assert (tmp_path / "launch-warning.log").read_text(encoding="utf-8") == "warning payload"
+    assert (tmp_path / "launch-crash.log").read_text(encoding="utf-8") == "error payload"
 
 
 def test_show_launch_error_trims_huge_tracebacks() -> None:
