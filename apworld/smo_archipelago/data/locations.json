@@ -3364,7 +3364,10 @@
         ],
         "region": "Ruined Kingdom",
         "requires": [],
-        "progression": true
+        "progression": true,
+        "place_item": [
+            "Ruined Kingdom Multi-Moon"
+        ]
     },
     {
         "name": "Ruined: In the Ancient Treasure Chest",

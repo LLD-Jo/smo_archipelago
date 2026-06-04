@@ -524,10 +524,10 @@ inline constexpr const char* kGameDataFileFindShine =
     "_ZNK12GameDataFile9findShineEii";
 
 // =============================================================================
-// OdysseyRescue — Lost + Ruined Kingdom softlock prevention.
+// OdysseyRescue — Lost Kingdom softlock prevention.
 // =============================================================================
 //
-// Both kingdoms physically ground the Odyssey on arrival and block
+// Lost Kingdom physically grounds the Odyssey on arrival and blocks
 // backtracking. In our randomizer the next-kingdom-required moons can land
 // anywhere in the pre-arrival reachable set, so a player who rushes in may
 // arrive with 0 AP credits and no way back to grab the unswept upstream
@@ -536,32 +536,26 @@ inline constexpr const char* kGameDataFileFindShine =
 // frames) that detects the broken state and force-repairs via SMO's own
 // named GameDataFunction:: entry points.
 //
-// NOTE: we intentionally do NOT force-unlock Bowser's Kingdom. Kgamer77's
-// reference calls unlockWorld(getWorldIndexSky()) once the Ruined boss-attack
-// clears, but "Sky" is Bowser's Kingdom internally and pre-unlocking it makes
-// SMO's post-boss autopilot skip past Bowser straight to Moon. Forward
-// progression to Bowser is left to vanilla and gated in AP logic by
-// regions.json's {KingdomMoons(Ruined,3)}. Hence getWorldIndexSky /
-// isRepairHomeByCrashedBoss are no longer resolved (removed 2026-05-29);
-// only the 8 manglings the repair/backtrack paths use remain.
+// Ruined Kingdom is NOT swept (the boss-attack repair/backtrack path was
+// removed 2026-06-04). Ruined's Odyssey grounding is released by beating the
+// dragon, and AP fill pins the Ruined Multi-Moon to the dragon's vanilla
+// location, so beating it always frees the Odyssey. The old backtrack path
+// pre-unlocked "Sky" (Bowser internally) and risked a mUnlockWorldNum overshoot
+// that skipped Bowser → Moon. With it gone, getWorldIndexSky /
+// isBossAttackedHome / repairHomeByCrashedBoss / crashHome are no longer
+// resolved — only the 5 manglings the Lost repair path uses remain.
 //
-// All 8 manglings verified via aarch64-none-elf-g++ -c on forward-decls
+// All manglings verified via aarch64-none-elf-g++ -c on forward-decls
 // matching MonsterDruide1/OdysseyDecomp src/System/GameDataFunction.h, and
-// the unlockWorld / isUnlockedWorld names were already in the project
-// pre-c85a27b cleanup with the same manglings.
+// the unlockWorld name was already in the project pre-c85a27b cleanup with
+// the same mangling.
 
 inline constexpr const char* kGameDataFunctionIsCrashHome =
     "_ZN16GameDataFunction11isCrashHomeE22GameDataHolderAccessor";
 inline constexpr const char* kGameDataFunctionRepairHome =
     "_ZN16GameDataFunction10repairHomeE20GameDataHolderWriter";
-inline constexpr const char* kGameDataFunctionCrashHome =
-    "_ZN16GameDataFunction9crashHomeE20GameDataHolderWriter";
 inline constexpr const char* kGameDataFunctionUnlockWorld =
     "_ZN16GameDataFunction11unlockWorldE20GameDataHolderWriteri";
-inline constexpr const char* kGameDataFunctionIsBossAttackedHome =
-    "_ZN16GameDataFunction18isBossAttackedHomeE22GameDataHolderAccessor";
-inline constexpr const char* kGameDataFunctionRepairHomeByCrashedBoss =
-    "_ZN16GameDataFunction23repairHomeByCrashedBossE20GameDataHolderWriter";
 inline constexpr const char* kGameDataFunctionGetWorldIndexClash =
     "_ZN16GameDataFunction18getWorldIndexClashEv";
 inline constexpr const char* kGameDataFunctionGetCurrentStageName =
