@@ -3364,7 +3364,10 @@
         ],
         "region": "Ruined Kingdom",
         "requires": [],
-        "progression": true
+        "progression": true,
+        "place_item": [
+            "Ruined Kingdom Multi-Moon"
+        ]
     },
     {
         "name": "Ruined: In the Ancient Treasure Chest",
@@ -3373,7 +3376,8 @@
             "Ruined Kingdom"
         ],
         "region": "Ruined Kingdom",
-        "requires": []
+        "requires": [],
+        "filler_only": true
     },
     {
         "name": "Ruined: Roulette Tower: Climbed",
@@ -3383,7 +3387,8 @@
             "Minigame"
         ],
         "region": "Ruined Kingdom",
-        "requires": "{OptOne(Mini Rocket)}"
+        "requires": "{OptOne(Mini Rocket)}",
+        "filler_only": true
     },
     {
         "name": "Ruined: Roulette Tower: Stopped",
@@ -3393,7 +3398,8 @@
             "Minigame"
         ],
         "region": "Ruined Kingdom",
-        "requires": "{OptOne(Mini Rocket)}"
+        "requires": "{OptOne(Mini Rocket)}",
+        "filler_only": true
     },
     {
         "name": "Bowser's: Infiltrate Bowser's Castle!",

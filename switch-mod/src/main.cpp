@@ -71,7 +71,7 @@ void installDepositKingdomLookupSymbol();
 void installPayShineSnapshotSymbol();
 void installCaptureGrantSymbols();
 void reconcileCaptureDictionary();
-// Lost + Ruined Kingdom softlock fix — see game/OdysseyRescue.hpp.
+// Lost Kingdom softlock fix — see game/OdysseyRescue.hpp.
 void installOdysseyRescueSymbols();
 void runOdysseySoftlockSweep();
 }  // namespace smoap::game
@@ -201,7 +201,7 @@ HkTrampoline<void, const HakoniwaSequence*> drawMainHook =
         smoap::ap::ApState::instance().flushPendingCaptureGrants();
         smoap::hooks::tickPendingUncapture();
 
-        // Lost + Ruined softlock sweep — see game/OdysseyRescue.hpp. Throttled
+        // Lost Kingdom softlock sweep — see game/OdysseyRescue.hpp. Throttled
         // to once per 60 frames (~1s @ 60fps). Pattern + cadence mirror
         // Kgamer77/SuperMarioOdysseyArchipelago v1.2.
         {
@@ -247,7 +247,7 @@ extern "C" void hkMain() {
     SMOAP_LOG_INFO("resolving M6-phase-D getPayShineNum lookup");
     smoap::game::installPayShineSnapshotSymbol();
 
-    SMOAP_LOG_INFO("resolving OdysseyRescue symbols (Lost + Ruined softlock fix)");
+    SMOAP_LOG_INFO("resolving OdysseyRescue symbols (Lost softlock fix)");
     smoap::game::installOdysseyRescueSymbols();
 
     // All hooks re-enabled now that the worker->Cappy cross-thread crash is

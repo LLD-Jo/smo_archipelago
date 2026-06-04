@@ -108,31 +108,30 @@ _ZNK12GameDataFile15isOpenShineNameEii
 _ZN12GameDataFile18tryUnlockShineNameEii
 _ZNK12GameDataFile9findShineEii
 
-// OdysseyRescue — Lost + Ruined Kingdom softlock prevention.
+// OdysseyRescue — Lost Kingdom softlock prevention.
 //
-// In our randomizer the player can rush into Lost (wrecked-Odyssey state) or
-// Ruined (boss-attacked state) without having received enough kingdom-specific
-// moon AP credits to release the Odyssey, and neither kingdom permits
-// backtracking — permanent softlock. Mirrors Kgamer77/SuperMarioOdysseyArchipelago
-// v1.2's updatePlayerInfo() fix: per-frame sweep that calls repairHome /
-// unlockWorld whenever isCrashHome or isBossAttackedHome holds.
+// In our randomizer the player can rush into Lost (wrecked-Odyssey state)
+// without having received enough kingdom-specific moon AP credits to release
+// the Odyssey, and Lost doesn't permit backtracking — permanent softlock.
+// Mirrors Kgamer77/SuperMarioOdysseyArchipelago v1.2's updatePlayerInfo() fix:
+// per-frame sweep that calls repairHome / unlockWorld whenever isCrashHome
+// holds.
 //
-// Bowser's Kingdom is NOT force-unlocked (getWorldIndexSky /
-// isRepairHomeByCrashedBoss removed 2026-05-29): pre-unlocking "Sky" while in
-// Ruined makes SMO's post-boss autopilot skip Bowser and warp to Moon. Forward
-// progression is left to vanilla + the regions.json {KingdomMoons(Ruined,3)}
-// gate. Only the 8 manglings the repair/backtrack paths use remain.
+// Ruined Kingdom is NOT handled here (boss-attack repair/backtrack path
+// removed 2026-06-04): beating the dragon releases the Odyssey in vanilla, and
+// AP fill pins the Ruined Multi-Moon to the dragon's vanilla location, so it
+// always frees. The old path pre-unlocked "Sky" (Bowser internally) and risked
+// a mUnlockWorldNum overshoot that skipped Bowser → Moon. With it gone,
+// crashHome / isBossAttackedHome / repairHomeByCrashedBoss are no longer
+// resolved — only the 5 manglings the Lost repair path uses remain.
 //
-// All 8 manglings produced via aarch64-none-elf-g++ on forward-decls matching
+// All manglings produced via aarch64-none-elf-g++ on forward-decls matching
 // MonsterDruide1/OdysseyDecomp src/System/GameDataFunction.h. The unlockWorld
 // name was already in the project pre-c85a27b cleanup and resurrected with
 // its original mangling.
 _ZN16GameDataFunction11isCrashHomeE22GameDataHolderAccessor
 _ZN16GameDataFunction10repairHomeE20GameDataHolderWriter
-_ZN16GameDataFunction9crashHomeE20GameDataHolderWriter
 _ZN16GameDataFunction11unlockWorldE20GameDataHolderWriteri
-_ZN16GameDataFunction18isBossAttackedHomeE22GameDataHolderAccessor
-_ZN16GameDataFunction23repairHomeByCrashedBossE20GameDataHolderWriter
 _ZN16GameDataFunction18getWorldIndexClashEv
 _ZN16GameDataFunction19getCurrentStageNameE22GameDataHolderAccessor
 
