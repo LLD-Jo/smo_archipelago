@@ -367,7 +367,7 @@
             "Sand Kingdom"
         ],
         "region": "Sand Kingdom",
-        "requires": "{BulletBillSmallSkip()}"
+        "requires": []
     },
     {
         "name": "Sand: On the Lone Pillar",
@@ -1043,7 +1043,7 @@
             "Wooded Kingdom"
         ],
         "region": "Wooded Kingdom",
-        "requires": "{MazeSkip()}",
+        "requires": "{WoodedPeace()}",
         "progression": true
     },
     {
@@ -1052,7 +1052,7 @@
             "Wooded Kingdom"
         ],
         "region": "Wooded Kingdom",
-        "requires": "{MazeSkip()}",
+        "requires": "{WoodedPeace()}",
         "progression": true
     },
     {
@@ -1061,7 +1061,7 @@
             "Wooded Kingdom"
         ],
         "region": "Wooded Kingdom",
-        "requires": "{MazeSkip()} and {OptOne(Sherm)}",
+        "requires": "{WoodedPeace()} and {OptOne(Sherm)}",
         "progression": true
     },
     {
@@ -1070,7 +1070,7 @@
             "Wooded Kingdom"
         ],
         "region": "Wooded Kingdom",
-        "requires": "{MazeSkip()} and {OptAll(|Sherm| or |Uproot|)}",
+        "requires": "{WoodedPeace()} and {OptAll(|Sherm| or |Uproot|)}",
         "progression": true
     },
     {
@@ -1079,7 +1079,7 @@
             "Wooded Kingdom"
         ],
         "region": "Wooded Kingdom",
-        "requires": "{MazeSkip()} and {OptOne(Sherm)}"
+        "requires": "{WoodedPeace()} and {OptOne(Sherm)}"
     },
     {
         "name": "Wooded: Back Way Up the Mountain",
@@ -1087,7 +1087,7 @@
             "Wooded Kingdom"
         ],
         "region": "Wooded Kingdom",
-        "requires": "{MazeSkip()}"
+        "requires": "{WoodedPeace()}"
     },
     {
         "name": "Wooded: Rolling Rock in the Woods",
@@ -1111,7 +1111,7 @@
             "Wooded Kingdom"
         ],
         "region": "Wooded Kingdom",
-        "requires": "{MazeSkip()}"
+        "requires": "{WoodedPeace()}"
     },
     {
         "name": "Wooded: Atop the Tall Tree",
@@ -1135,7 +1135,7 @@
             "Wooded Kingdom"
         ],
         "region": "Wooded Kingdom",
-        "requires": "{MazeSkip()} and {OptOne(Sherm)}"
+        "requires": "{WoodedPeace()} and {OptOne(Sherm)}"
     },
     {
         "name": "Wooded: The Nut 'Round the Corner",
@@ -1143,7 +1143,7 @@
             "Wooded Kingdom"
         ],
         "region": "Wooded Kingdom",
-        "requires": "{MazeSkip()}"
+        "requires": "{WoodedPeace()}"
     },
     {
         "name": "Wooded: Climb the Cliff to Get the Nut",
@@ -1183,7 +1183,7 @@
             "Wooded Kingdom"
         ],
         "region": "Wooded Kingdom",
-        "requires": "{MazeSkip()}"
+        "requires": "{WoodedPeace()}"
     },
     {
         "name": "Wooded: Fire in the Cave",
@@ -1208,7 +1208,7 @@
             "Wooded Kingdom"
         ],
         "region": "Wooded Kingdom",
-        "requires": "{MazeSkip()} and {OptOne(Goomba)}"
+        "requires": "{WoodedPeace()} and {OptOne(Goomba)}"
     },
     {
         "name": "Wooded: Inside a Rock in the Forest",
@@ -1249,7 +1249,7 @@
             "Wooded Kingdom"
         ],
         "region": "Wooded Kingdom",
-        "requires": "{MazeSkip()}"
+        "requires": "{WoodedPeace()}"
     },
     {
         "name": "Wooded: Make the Secret Flower Field Bloom",
@@ -1383,7 +1383,7 @@
             "Deep Woods"
         ],
         "region": "Wooded Kingdom",
-        "requires": "{MazeSkip()} and {OptAll(|Mini Rocket| and |Paragoomba|)}"
+        "requires": "{WoodedPeace()} and {OptAll(|Mini Rocket| and |Paragoomba|)}"
     },
     {
         "name": "Wooded: Nut Hidden in the Fog",
@@ -1392,7 +1392,7 @@
             "Deep Woods"
         ],
         "region": "Wooded Kingdom",
-        "requires": "{MazeSkip()} and {OptAll(|Mini Rocket| and |Paragoomba|)}"
+        "requires": "{WoodedPeace()} and {OptAll(|Mini Rocket| and |Paragoomba|)}"
     },
     {
         "name": "Wooded: Flower Road Run",
@@ -1401,7 +1401,7 @@
             "Long Course"
         ],
         "region": "Wooded Kingdom",
-        "requires": "{MazeSkip()} and ({OptOne(Wall Jump)})"
+        "requires": "{WoodedPeace()} and ({OptOne(Wall Jump)})"
     },
     {
         "name": "Wooded: Flower Road Reach",
@@ -1410,7 +1410,7 @@
             "Long Course"
         ],
         "region": "Wooded Kingdom",
-        "requires": "{MazeSkip()} and {OptOne(Goomba)}"
+        "requires": "{WoodedPeace()} and {OptOne(Goomba)}"
     },
     {
         "name": "Wooded: Elevator Escalation",
@@ -1419,7 +1419,7 @@
             "Long Course"
         ],
         "region": "Wooded Kingdom",
-        "requires": "{MazeSkip()} and {OptOne(Sherm)}"
+        "requires": "{WoodedPeace()} and {OptOne(Sherm)}"
     },
     {
         "name": "Wooded: Elevator Blind Spot",
@@ -1428,7 +1428,7 @@
             "Long Course"
         ],
         "region": "Wooded Kingdom",
-        "requires": "{MazeSkip()} and {OptOne(Sherm)}"
+        "requires": "{WoodedPeace()} and {OptOne(Sherm)}"
     },
     {
         "name": "Wooded: Walking on Clouds",
@@ -2056,7 +2056,7 @@
             "Metro Kingdom"
         ],
         "region": "Metro Kingdom",
-        "requires": "{BulletBillSkip()}"
+        "requires": "{OptOne(Bullet Bill)}"
     },
     {
         "name": "Metro: Motor Scooter: Escape!",
@@ -2080,7 +2080,7 @@
             "Metro Kingdom"
         ],
         "region": "Sand Kingdom",
-        "requires": "{BulletBillSkip()}"
+        "requires": "{OptOne(Bullet Bill)}"
     },
     {
         "name": "Metro: A Tourist in the Metro Kingdom!",
@@ -3325,7 +3325,7 @@
             "Luncheon Kingdom"
         ],
         "region": "Wooded Kingdom",
-        "requires": "{MazeSkip()}"
+        "requires": "{WoodedPeace()}"
     },
     {
         "name": "Luncheon: A Tourist in the Luncheon Kingdom!",
@@ -3791,7 +3791,7 @@
             "Moon Kingdom"
         ],
         "region": "Moon Kingdom",
-        "requires": "{ParabonesSkip()} and {OptOne(Banzai Bill)} and ({OptOne(Wall Jump)})"
+        "requires": "{OptOne(Parabones)} and {OptOne(Banzai Bill)} and ({OptOne(Wall Jump)})"
     },
     {
         "name": "Moon: Rolling Rock on the Moon",
@@ -3863,7 +3863,7 @@
             "Moon Kingdom"
         ],
         "region": "Moon Kingdom",
-        "requires": "{ParabonesSkip()} and {OptOne(Banzai Bill)}"
+        "requires": "{OptOne(Parabones)} and {OptOne(Banzai Bill)}"
     },
     {
         "name": "Moon: On Top of the Cannon",
@@ -3872,7 +3872,7 @@
             "Moon Kingdom"
         ],
         "region": "Moon Kingdom",
-        "requires": "{ParabonesSkip()} and {OptOne(Banzai Bill)}"
+        "requires": "{OptOne(Parabones)} and {OptOne(Banzai Bill)}"
     },
     {
         "name": "Moon: Fly to the Treasure Chest and Back",
@@ -3881,7 +3881,7 @@
             "Moon Kingdom"
         ],
         "region": "Moon Kingdom",
-        "requires": "{ParabonesSkip()} and {OptOne(Banzai Bill)}"
+        "requires": "{OptOne(Parabones)} and {OptOne(Banzai Bill)}"
     },
     {
         "name": "Moon: Up in the Rafters",
@@ -3893,7 +3893,7 @@
             "Wall Jump"
         ],
         "region": "Moon Kingdom",
-        "requires": "{ParabonesSkip()} and {OptOne(Banzai Bill)} and ({OptOne(Wall Jump)})"
+        "requires": "{OptOne(Parabones)} and {OptOne(Banzai Bill)} and ({OptOne(Wall Jump)})"
     },
     {
         "name": "Arrive in the Mushroom Kingdom",
@@ -3902,7 +3902,7 @@
         ],
         "region": "Moon Kingdom",
         "victory": true,
-        "requires": "{OptOne(Banzai Bill)} and {ParabonesSkip()}"
+        "requires": "{OptOne(Banzai Bill)} and {OptOne(Parabones)}"
     },
     {
         "name": "Capture: Paragoomba",
@@ -4022,7 +4022,7 @@
             "Capture"
         ],
         "region": "Wooded Kingdom",
-        "requires": "({MazeSkip()}) AND |Poison Piranha Plant|"
+        "requires": "({WoodedPeace()}) AND |Poison Piranha Plant|"
     },
     {
         "name": "Capture: Uproot",
@@ -4038,7 +4038,7 @@
             "Capture"
         ],
         "region": "Wooded Kingdom",
-        "requires": "({MazeSkip()}) AND |Fire Bro|"
+        "requires": "({WoodedPeace()}) AND |Fire Bro|"
     },
     {
         "name": "Capture: Sherm",
@@ -4046,7 +4046,7 @@
             "Capture"
         ],
         "region": "Wooded Kingdom",
-        "requires": "({MazeSkip()}) AND |Sherm|"
+        "requires": "({WoodedPeace()}) AND |Sherm|"
     },
     {
         "name": "Capture: Coin Coffer",
@@ -4054,7 +4054,7 @@
             "Capture"
         ],
         "region": "Wooded Kingdom",
-        "requires": "({MazeSkip()} or {OptOne(Hold/Throw)}) AND |Coin Coffer|"
+        "requires": "({WoodedPeace()} or {OptOne(Hold/Throw)}) AND |Coin Coffer|"
     },
     {
         "name": "Capture: Tree",
@@ -4244,7 +4244,7 @@
             "Capture"
         ],
         "region": "Moon Kingdom",
-        "requires": "({ParabonesSkip()}) AND |Banzai Bill|"
+        "requires": "({OptOne(Parabones)}) AND |Banzai Bill|"
     },
     {
         "name": "Capture: Chargin' Chuck",
@@ -4253,6 +4253,6 @@
             "Capture"
         ],
         "region": "Moon Kingdom",
-        "requires": "({ParabonesSkip()} and {OptOne(Banzai Bill)}) AND |Chargin' Chuck|"
+        "requires": "({OptOne(Parabones)} and {OptOne(Banzai Bill)}) AND |Chargin' Chuck|"
     }
 ]

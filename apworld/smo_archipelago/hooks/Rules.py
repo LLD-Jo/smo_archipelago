@@ -5,18 +5,6 @@ from BaseClasses import MultiWorld, CollectionState
 
 import re
 
-def BulletBillSkip(world: World, multiworld: MultiWorld, state: CollectionState, player: int):
-    """can the player do certain jumps without a bullet bill (or with a bullet bill)"""
-    return True
-
-def BulletBillSmallSkip(world: World, multiworld: MultiWorld, state: CollectionState, player: int):
-    """can the player do certain small jumps without a bullet bill (or with a bullet bill)"""
-    return True
-
-def BulletBillMaze(world: World, multiworld: MultiWorld, state: CollectionState, player: int):
-    """can the player do the bullet bill maze without a bullet bill (or with a bullet bill)"""
-    return True
-
 def SandPeace(world: World, multiworld: MultiWorld, state: CollectionState, player: int):
     """can the player do sand peace"""
     if is_option_enabled(multiworld, player, "capturesanity"):
@@ -37,10 +25,6 @@ def SwimOrCapJump(world: World, multiworld: MultiWorld, state: CollectionState, 
 
 def CheepCheepOrGroundPound(world: World, multiworld: MultiWorld, state: CollectionState, player: int):
     """cheep cheep or ground pound"""
-    return True
-
-def MazeSkip(world: World, multiworld: MultiWorld, state: CollectionState, player: int):
-    """can the player get past the maze in wooded kingdom"""
     return True
 
 def WoodedPeace(world: World, multiworld: MultiWorld, state: CollectionState, player: int):
@@ -130,10 +114,6 @@ def ScaleAWallNoTripleJump(world: World, multiworld: MultiWorld, state: Collecti
 
 def NiceFrame(world: World, multiworld: MultiWorld, state: CollectionState, player: int):
     """can the player knock down the nice frame (and get the other nearby moon)"""
-    return True
-
-def ParabonesSkip(world: World, multiworld: MultiWorld, state: CollectionState, player: int):
-    """can the player skip the parabones (or use it)"""
     return True
 
 def BowserPeace(world: World, multiworld: MultiWorld, state: CollectionState, player: int):
