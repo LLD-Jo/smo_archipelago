@@ -287,10 +287,11 @@
     {
         "name": "Sand: Showdown on the Inverted Pyramid",
         "category": [
-            "Sand Kingdom"
+            "Sand Kingdom",
+            "Sand Peace"
         ],
         "region": "Sand Kingdom",
-        "requires": "{BulletBillSkip()}",
+        "requires": "{SandPeace()}",
         "progression": true
     },
     {
