@@ -347,10 +347,11 @@
     {
         "name": "Sand: Secret of the Inverted Mural",
         "category": [
-            "Sand Kingdom"
+            "Sand Kingdom",
+            "Sand Peace"
         ],
         "region": "Sand Kingdom",
-        "requires": "{BulletBillSkip()}"
+        "requires": "{SandPeace()}"
     },
     {
         "name": "Sand: On Top of the Stone Archway",
@@ -628,7 +629,7 @@
             "Sand Kingdom"
         ],
         "region": "Sand Kingdom",
-        "requires": "{BulletBillSkip()}"
+        "requires": []
     },
     {
         "name": "Sand: Sand Kingdom Slots",
