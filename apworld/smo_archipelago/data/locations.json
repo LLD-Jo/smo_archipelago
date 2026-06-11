@@ -378,10 +378,11 @@
     {
         "name": "Sand: On the Statue's Tail",
         "category": [
-            "Sand Kingdom"
+            "Sand Kingdom",
+            "Sand Peace"
         ],
         "region": "Sand Kingdom",
-        "requires": "{BulletBillSkip()}"
+        "requires": "{SandPeace()}"
     },
     {
         "name": "Sand: Hang Your Hat on the Fountain",
