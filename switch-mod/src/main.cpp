@@ -41,6 +41,9 @@ void installAddPayShineAllHook();
 void installCaptureStartHook();
 void tickPendingUncapture();
 void installWorldMapSelectHook();
+// Drains ApState::inbound_warp_pending (PC /warp escape) — see
+// hooks/WorldMapSelectHook.cpp. Called per-frame from drawMain.
+void tickPendingWarp();
 void installMoonLabelHook();
 void installShineAppearanceHook();
 void installCreditsStartHook();
@@ -200,11 +203,13 @@ HkTrampoline<void, const HakoniwaSequence*> drawMainHook =
         smoap::game::reconcileCaptureDictionary();
         smoap::ap::ApState::instance().flushPendingCaptureGrants();
         smoap::hooks::tickPendingUncapture();
+        // PC /warp escape — teleport to a hub kingdom on request. Per-frame
+        // (not throttled) so it's responsive; cheap when no warp is pending.
+        smoap::hooks::tickPendingWarp();
 
-        // Lost + Bowser's Kingdom softlock sweep — see game/OdysseyRescue.hpp.
-        // Throttled to once per 60 frames (~1s @ 60fps). Lost pattern + cadence
-        // mirror Kgamer77/SuperMarioOdysseyArchipelago v1.2; the Bowser's branch
-        // (isBossAttackedHomeNext + no-Pokio gate) is ours.
+        // Lost Kingdom softlock sweep — see game/OdysseyRescue.hpp. Throttled
+        // to once per 60 frames (~1s @ 60fps). Pattern + cadence mirror
+        // Kgamer77/SuperMarioOdysseyArchipelago v1.2.
         {
             static int s_softlockTick = 0;
             if (++s_softlockTick >= 60) {
@@ -248,7 +253,7 @@ extern "C" void hkMain() {
     SMOAP_LOG_INFO("resolving M6-phase-D getPayShineNum lookup");
     smoap::game::installPayShineSnapshotSymbol();
 
-    SMOAP_LOG_INFO("resolving OdysseyRescue symbols (Lost + Bowser's softlock fix)");
+    SMOAP_LOG_INFO("resolving OdysseyRescue symbols (Lost softlock fix)");
     smoap::game::installOdysseyRescueSymbols();
 
     // All hooks re-enabled now that the worker->Cappy cross-thread crash is

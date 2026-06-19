@@ -28,36 +28,6 @@
 // the player leave. The old Ruined backtrack-repair path is gone: it risked a
 // mUnlockWorldNum counter overshoot that made the post-boss autopilot skip
 // Bowser straight to Moon.
-//
-// Bowser's Kingdom IS swept (added 2026-06-19), but via a wholly different
-// state than Lost. Bowser's never touches the home-status enum — after Ruined
-// the status is RepairedHomeByCrashedBoss, so isCrashHome is false there.
-// Departure is instead gated by GameDataHolder::isBossAttackedHomeNext(worldId)
-// (per MonsterDruide1/OdysseyDecomp): true while mUnlockWorldNum is at
-// Boss(Ruined)/Boss+1(Sky) and the player is physically in Sky(Bowser's). It
-// only clears when the unlock advances past Sky. A capturesanity player who
-// flies in without the Pokio capture can't beat the RoboBrood (Pokio is the
-// only route up the castle) to advance, and can't fly out → permanent softlock.
-//
-// Why Kgamer77/SuperMarioOdysseyArchipelago does NOT hit this (verified by
-// reading his fork): his AP server drives kingdom unlocks via UnlockWorld
-// packets → GameDataFunction::unlockWorld(), which advances mUnlockWorldNum and
-// thereby clears isBossAttackedHomeNext as a side effect — decoupling kingdom
-// access from beating Bowser. Our mod removed that whole AP-driven unlock path
-// on 2026-05-18 (the ItemKind::Kingdom wire kind + unlockWorld symbol; see
-// milestones.md "kingdom unlock via unlockWorld fallback was dropped"), which
-// is exactly why the gap exists for us and not for him.
-//
-// The Bowser's branch advances the unlock to Moon — the same unlockWorld() lever
-// Kgamer77's server-driven path uses, the sole lever that clears
-// isBossAttackedHomeNext — so the player can fly back out and find Pokio. It
-// fires ONLY when captureBlocked("Pokio") is true, i.e. a genuinely-stuck
-// capturesanity player. For everyone who can beat Bowser legitimately
-// (Pokio-owners, and all non-capturesanity seeds where captures are
-// synthetically unlocked at HELLO) the gate is left fully intact, so the
-// vanilla Bowser→Moon autopilot — the mUnlockWorldNum overshoot footgun above
-// — is never perturbed. The branch resolves its 3 symbols independently of the
-// Lost branch, so a resolution failure in one can't disable the other.
 
 #pragma once
 
