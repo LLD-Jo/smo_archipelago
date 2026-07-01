@@ -1,6 +1,14 @@
 {
   "versions": [
     {
+      "package_version": "0.0.3",
+      "download_url": "https://github.com/LLD-Jo/smo_archipelago/releases/download/v0.0.3/smo-poptracker-v0.0.3.zip",
+      "sha256": "8b7c38c8088203526af8ba00ccf51db1ddca66a823fdcef4df79250d8586e487",
+      "changelog": [
+        "fixed poptracker issues with difficult mode"
+      ]
+    },
+    {
       "package_version": "1.2.0",
       "download_url": "https://github.com/mdietz94/smo_archipelago/releases/download/v1.2.0/smo-poptracker-v1.2.0.zip",
       "sha256": "bbe843b3fa417b21d3a31cebbf78de36b4e34386664911f43f531d2356545190",
